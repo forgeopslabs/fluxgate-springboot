@@ -31,16 +31,15 @@ Add the starter to your `pom.xml`:
 Configure the edge server connection in your `application.yml`:
 
 ```yaml
-feature:
-  toggle:
-    base-url: http://localhost:8081
-    client-id: your-client-id
-    client-secret: your-client-secret
-    connection-timeout: PT5S
-    read-timeout: PT5S
-    retry-attempts: 3
-    retry-delay: PT1S
-    fallback-enabled: true
+fluxgate:
+  base-url: http://localhost:8081
+  client-id: your-client-id
+  client-secret: your-client-secret
+  connection-timeout: PT5S
+  read-timeout: PT5S
+  retry-attempts: 3
+  retry-delay: PT1S
+  fallback-enabled: true
 ```
 
 ### 3. Basic Usage
@@ -74,23 +73,27 @@ public class MyController {
 
 | Property | Description | Default | Type |
 |----------|-------------|---------|------|
-| `feature.toggle.base-url` | Base URL of the FluxGate Edge Server | `http://localhost:8081` | String |
-| `feature.toggle.client-id` | Client ID for authentication | - | String |
-| `feature.toggle.client-secret` | Client secret for authentication | - | String |
-| `feature.toggle.connection-timeout` | Connection timeout | `PT5S` | Duration |
-| `feature.toggle.read-timeout` | Read timeout | `PT5S` | Duration |
-| `feature.toggle.retry-attempts` | Number of retry attempts | `3` | Integer |
-| `feature.toggle.retry-delay` | Initial retry delay | `PT1S` | Duration |
-| `feature.toggle.max-retry-delay` | Maximum retry delay | `PT10S` | Duration |
-| `feature.toggle.retry-multiplier` | Retry delay multiplier | `2.0` | Double |
-| `feature.toggle.fallback-enabled` | Enable fallback behavior | `true` | Boolean |
-| `feature.toggle.default-fallback-value` | Default fallback value | `false` | Boolean |
-| `feature.toggle.metrics-enabled` | Enable Micrometer metrics | `true` | Boolean |
-| `feature.toggle.health-check-enabled` | Enable health indicator | `true` | Boolean |
+| `fluxgate.base-url` | Base URL of the FluxGate Edge Server | `http://localhost:8081` | String |
+| `fluxgate.client-id` | Client ID for authentication | - | String |
+| `fluxgate.client-secret` | Client secret for authentication | - | String |
+| `fluxgate.connection-timeout` | Connection timeout | `PT5S` | Duration |
+| `fluxgate.read-timeout` | Read timeout | `PT5S` | Duration |
+| `fluxgate.retry-attempts` | Number of retry attempts | `3` | Integer |
+| `fluxgate.retry-delay` | Initial retry delay | `PT1S` | Duration |
+| `fluxgate.max-retry-delay` | Maximum retry delay | `PT10S` | Duration |
+| `fluxgate.retry-multiplier` | Retry delay multiplier | `2.0` | Double |
+| `fluxgate.fallback-enabled` | Enable fallback behavior | `true` | Boolean |
+| `fluxgate.default-fallback-value` | Default fallback value | `false` | Boolean |
+| `fluxgate.metrics-enabled` | Enable Micrometer metrics | `true` | Boolean |
+| `fluxgate.health-check-enabled` | Enable health indicator | `true` | Boolean |
+| `fluxgate.health-check-interval` | Interval for health check pings | `PT30S` | Duration |
+| `fluxgate.caching-enabled` | Enable caching of evaluation results | `false` | Boolean |
+| `fluxgate.cache-entry-ttl` | TTL for cached entries | `PT5M` | Duration |
+| `fluxgate.cache-max-size` | Maximum cache size | `1000` | Integer |
 
 ## API Reference
 
-### FeatureToggleClient Interface
+### FluxGateClient Interface
 
 #### Basic Methods
 
@@ -153,14 +156,14 @@ boolean isEnabledWithFallback(FeatureEvaluationRequest request, boolean fallback
 @Service
 public class UserService {
 
-    private final FeatureToggleClient featureToggleClient;
+    private final FluxGateClient fluxGateClient;
 
-    public UserService(FeatureToggleClient featureToggleClient) {
-        this.featureToggleClient = featureToggleClient;
+    public UserService(FluxGateClient fluxGateClient) {
+        this.fluxGateClient = fluxGateClient;
     }
 
     public User createUser(CreateUserRequest request) {
-        boolean emailVerificationEnabled = featureToggleClient.isEnabled("email-verification", "prod");
+        boolean emailVerificationEnabled = fluxGateClient.isEnabled("email-verification", "prod");
         
         User user = new User(request);
         
@@ -179,7 +182,7 @@ public class UserService {
 @Service
 public class RecommendationService {
 
-    private final FeatureToggleClient featureToggleClient;
+    private final FluxGateClient fluxGateClient;
 
     public List<Product> getRecommendations(User user) {
         Map<String, String> context = Map.of(
@@ -188,7 +191,7 @@ public class RecommendationService {
             "user.country", user.getCountry()
         );
 
-        boolean mlRecommendationsEnabled = featureToggleClient.isEnabled(
+        boolean mlRecommendationsEnabled = fluxGateClient.isEnabled(
             "ml-recommendations", "prod", context);
 
         if (mlRecommendationsEnabled) {
@@ -206,7 +209,7 @@ public class RecommendationService {
 @Service
 public class PaymentService {
 
-    private final FeatureToggleClient featureToggleClient;
+    private final FluxGateClient fluxGateClient;
 
     public void processPayment(Payment payment) {
         FeatureEvaluationRequest request = FeatureEvaluationRequest.builder()
@@ -219,7 +222,7 @@ public class PaymentService {
             ))
             .build();
 
-        boolean useNewGateway = featureToggleClient.isEnabled(request);
+        boolean useNewGateway = fluxGateClient.isEnabled(request);
         
         if (useNewGateway) {
             newPaymentGateway.processPayment(payment);
@@ -236,10 +239,10 @@ public class PaymentService {
 @Service
 public class AsyncFeatureService {
 
-    private final FeatureToggleClient featureToggleClient;
+    private final FluxGateClient fluxGateClient;
 
     public CompletableFuture<String> processDataAsync() {
-        CompletableFuture<Boolean> featureCheck = featureToggleClient
+        CompletableFuture<Boolean> featureCheck = fluxGateClient
             .isEnabledAsync("async-processing", "prod");
 
         return featureCheck.thenApply(enabled -> {
@@ -259,11 +262,11 @@ public class AsyncFeatureService {
 @Service
 public class ResilientService {
 
-    private final FeatureToggleClient featureToggleClient;
+    private final FluxGateClient fluxGateClient;
 
     public void performOperation() {
         // Never throws exceptions - uses fallback if edge server is down
-        boolean featureEnabled = featureToggleClient.isEnabledWithFallback(
+        boolean featureEnabled = fluxGateClient.isEnabledWithFallback(
             "experimental-feature", "prod", false);
 
         if (featureEnabled) {
@@ -343,13 +346,12 @@ The starter provides comprehensive error handling:
 
 ```java
 // Global fallback configuration
-feature:
-  toggle:
-    fallback-enabled: true
-    default-fallback-value: false
+fluxgate:
+  fallback-enabled: true
+  default-fallback-value: false
 
 // Per-request fallback
-boolean result = featureToggleClient.isEnabledWithFallback("feature", "env", true);
+boolean result = fluxGateClient.isEnabledWithFallback("feature", "env", true);
 ```
 
 ## Testing
@@ -361,11 +363,11 @@ boolean result = featureToggleClient.isEnabledWithFallback("feature", "env", tru
 public class MyServiceTest {
 
     @MockBean
-    private FeatureToggleClient featureToggleClient;
+    private FluxGateClient fluxGateClient;
 
     @Test
     public void testFeatureEnabled() {
-        when(featureToggleClient.isEnabled("my-feature", "test"))
+        when(fluxGateClient.isEnabled("my-feature", "test"))
             .thenReturn(true);
 
         // Your test logic here
@@ -377,11 +379,10 @@ public class MyServiceTest {
 
 ```yaml
 # application-test.yml
-feature:
-  toggle:
-    base-url: http://localhost:8081
-    fallback-enabled: true
-    default-fallback-value: false
+fluxgate:
+  base-url: http://localhost:8081
+  fallback-enabled: true
+  default-fallback-value: false
 ```
 
 ## Advanced Configuration
@@ -438,7 +439,7 @@ public class AsyncConfig {
 
 ## License
 
-This project is licensed under the MIT License.
+This project is licensed under the Apache License, Version 2.0.
 
 ## Support
 
