@@ -19,13 +19,22 @@ The project is now configured with:
 3. Import your repository (`keaz/fluxgate-springboot`)
 4. Note your organization key (should be `keaz`)
 
-### 2. Generate SonarQube Token
+### 2. Disable Automatic Analysis
+
+**Important**: You must disable Automatic Analysis to use CI-based analysis.
+
+1. In SonarCloud, go to your project
+2. Navigate to **Administration** → **Analysis Method**
+3. Turn **OFF** the "Automatic Analysis" toggle
+4. This enables CI-based analysis through GitHub Actions
+
+### 3. Generate SonarQube Token
 
 1. In SonarCloud, go to **My Account** → **Security**
 2. Generate a new token with a descriptive name (e.g., "GitHub Actions")
 3. Copy the token value
 
-### 3. Add GitHub Repository Secret
+### 4. Add GitHub Repository Secret
 
 1. Go to your GitHub repository settings
 2. Navigate to **Secrets and variables** → **Actions**
@@ -140,9 +149,13 @@ Configure quality gates in SonarCloud:
 
 ### Common Issues
 
-1. **No coverage data**: Ensure tests are running and JaCoCo agent is attached
-2. **SonarQube authentication failed**: Verify `SONAR_TOKEN` secret is set correctly
-3. **Analysis not triggering**: Check workflow file syntax and triggers
+1. **"Automatic Analysis is enabled" error**: 
+   - Go to SonarCloud project → Administration → Analysis Method
+   - Disable "Automatic Analysis" toggle
+   - Use CI-based analysis instead
+2. **No coverage data**: Ensure tests are running and JaCoCo agent is attached
+3. **SonarQube authentication failed**: Verify `SONAR_TOKEN` secret is set correctly
+4. **Analysis not triggering**: Check workflow file syntax and triggers
 
 ### Local Development
 
