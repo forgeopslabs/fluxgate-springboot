@@ -65,8 +65,11 @@ To publish to Maven Central, you need to configure the following secrets in your
 - Make sure the key hasn't expired
 
 ### OSSRH Issues
+- **401 Unauthorized**: Verify your OSSRH credentials are correct
+  - Make sure you're using a token, not a password
+  - Check that the token hasn't expired
+  - Verify the username is correct (case-sensitive)
 - Verify your group ID is approved for publishing
-- Check that your credentials are correct
 - Ensure you're using a token, not a password
 
 ### Build Issues
