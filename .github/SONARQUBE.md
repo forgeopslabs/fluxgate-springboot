@@ -53,6 +53,8 @@ mvn clean test
 mvn sonar:sonar -Dsonar.token=$SONAR_TOKEN
 ```
 
+**Note**: The analysis uses `mvn clean test` instead of `mvn clean verify` to avoid triggering GPG signing which is only needed for releases.
+
 ### Coverage Reports
 
 JaCoCo generates coverage reports in multiple formats:
