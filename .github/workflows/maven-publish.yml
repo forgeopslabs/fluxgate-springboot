@@ -41,7 +41,7 @@ jobs:
         <settings>
           <servers>
             <server>
-              <id>central</id>
+              <id>ossrh</id>
               <username>${{ secrets.OSSRH_USERNAME }}</username>
               <password>${{ secrets.OSSRH_TOKEN }}</password>
             </server>
@@ -59,7 +59,7 @@ jobs:
       run: mvn -B package --file pom.xml
 
     - name: Publish to Maven Central
-      run: mvn --no-transfer-progress --batch-mode deploy
+      run: mvn deploy --settings ~/.m2/settings.xml
       env:
         OSSRH_USERNAME: ${{ secrets.OSSRH_USERNAME }}
         OSSRH_TOKEN: ${{ secrets.OSSRH_TOKEN }}
