@@ -48,7 +48,7 @@
         <jackson.version>2.15.2</jackson.version>
 
         <!-- SonarQube and Code Coverage -->
-        <sonar.organization>keaz</sonar.organization>
+        <sonar.organization>kasun</sonar.organization>
         <sonar.host.url>https://sonarcloud.io</sonar.host.url>
         <sonar.projectKey>keaz_fluxgate-springboot</sonar.projectKey>
         <sonar.coverage.jacoco.xmlReportPaths>target/site/jacoco/jacoco.xml</sonar.coverage.jacoco.xmlReportPaths>
