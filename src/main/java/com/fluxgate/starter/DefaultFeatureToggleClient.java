@@ -162,6 +162,9 @@ public class DefaultFeatureToggleClient implements FluxGateClient {
     @Override
     public void execute(FeatureEvaluationRequest request, Consumer<Void> consumer) {
         validateRequest(request);
+        if (consumer == null) {
+            throw new IllegalArgumentException("Consumer cannot be null");
+        }
         try {
             if (isEnabled(request)) {
                 consumer.accept(null);

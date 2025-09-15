@@ -5,13 +5,14 @@ import org.springframework.boot.actuate.health.HealthIndicator;
 
 /**
  * Health indicator for the FluxGate Feature Toggle Edge Server connectivity.
- * This integrates with Spring Boot Actuator to provide health check information.
+ * This integrates with Spring Boot Actuator to provide health check
+ * information.
  */
 public class FeatureToggleHealthIndicator implements HealthIndicator {
 
-    private final DefaultFeatureToggleClient featureToggleClient;
+    private final FluxGateClient featureToggleClient;
 
-    public FeatureToggleHealthIndicator(DefaultFeatureToggleClient featureToggleClient) {
+    public FeatureToggleHealthIndicator(FluxGateClient featureToggleClient) {
         this.featureToggleClient = featureToggleClient;
     }
 
@@ -19,7 +20,7 @@ public class FeatureToggleHealthIndicator implements HealthIndicator {
     public Health health() {
         try {
             boolean isHealthy = featureToggleClient.isHealthy();
-            
+
             if (isHealthy) {
                 return Health.up()
                         .withDetail("status", "Edge server is reachable")
@@ -31,13 +32,13 @@ public class FeatureToggleHealthIndicator implements HealthIndicator {
                         .withDetail("service", "fluxgate-edge-server")
                         .build();
             }
-            
+
         } catch (Exception e) {
+            String errorMessage = e.getMessage() != null ? e.getMessage() : "Unknown error";
             return Health.down()
                     .withDetail("status", "Health check failed")
                     .withDetail("service", "fluxgate-edge-server")
-                    .withDetail("error", e.getMessage())
-                    .withException(e)
+                    .withDetail("error", errorMessage)
                     .build();
         }
     }

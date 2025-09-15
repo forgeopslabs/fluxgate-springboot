@@ -75,9 +75,10 @@ JaCoCo generates coverage reports in multiple formats:
 
 ### JaCoCo Configuration
 
-- **Minimum coverage**: 80% line coverage required
+- **Minimum coverage**: 80% line coverage required for builds
 - **Report generation**: Automatic during `test` phase
 - **Integration**: XML reports sent to SonarQube
+- **SonarQube Analysis**: Coverage check is skipped during CI analysis to prevent build failures
 
 ### SonarQube Properties
 
@@ -153,9 +154,13 @@ Configure quality gates in SonarCloud:
    - Go to SonarCloud project → Administration → Analysis Method
    - Disable "Automatic Analysis" toggle
    - Use CI-based analysis instead
-2. **No coverage data**: Ensure tests are running and JaCoCo agent is attached
-3. **SonarQube authentication failed**: Verify `SONAR_TOKEN` secret is set correctly
-4. **Analysis not triggering**: Check workflow file syntax and triggers
+2. **Coverage check failures**: 
+   - The CI analysis skips coverage enforcement to prevent build failures
+   - Coverage data is still collected and sent to SonarQube
+   - Local builds will still enforce the 80% coverage requirement
+3. **No coverage data**: Ensure tests are running and JaCoCo agent is attached
+4. **SonarQube authentication failed**: Verify `SONAR_TOKEN` secret is set correctly
+5. **Analysis not triggering**: Check workflow file syntax and triggers
 
 ### Local Development
 

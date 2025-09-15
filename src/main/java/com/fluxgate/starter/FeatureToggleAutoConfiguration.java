@@ -1,6 +1,5 @@
 package com.fluxgate.starter;
 
-import io.micrometer.core.instrument.MeterRegistry;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.boot.actuate.health.HealthIndicator;
@@ -21,7 +20,8 @@ import java.util.concurrent.Executor;
 /**
  * Auto-configuration for FluxGate Feature Toggle Spring Boot starter.
  * 
- * This configuration is automatically loaded when the starter is on the classpath
+ * This configuration is automatically loaded when the starter is on the
+ * classpath
  * and provides all necessary beans for feature toggle functionality.
  */
 @AutoConfiguration
@@ -36,7 +36,7 @@ public class FeatureToggleAutoConfiguration {
     @ConditionalOnMissingBean
     public RestTemplate featureToggleRestTemplate(FeatureToggleProperties properties, RestTemplateBuilder builder) {
         logger.debug("Configuring RestTemplate for FeatureToggle with timeouts: connect={}ms, read={}ms",
-                    properties.getConnectionTimeout().toMillis(), properties.getReadTimeout().toMillis());
+                properties.getConnectionTimeout().toMillis(), properties.getReadTimeout().toMillis());
 
         return builder
                 .setConnectTimeout(properties.getConnectionTimeout())
@@ -53,31 +53,28 @@ public class FeatureToggleAutoConfiguration {
         executor.setQueueCapacity(100);
         executor.setThreadNamePrefix("feature-toggle-async-");
         executor.initialize();
-        
+
         logger.debug("Configured async executor for FeatureToggle with 2-10 threads");
         return executor;
     }
 
-
-
     @Bean
     @ConditionalOnMissingBean
     public FluxGateClient featureToggleClient(RestTemplate featureToggleRestTemplate,
-                                                  FeatureToggleProperties properties,
-                                                  Executor featureToggleAsyncExecutor) {
+            FeatureToggleProperties properties,
+            Executor featureToggleAsyncExecutor) {
         logger.info("Creating FeatureToggleClient with base URL: {}", properties.getBaseUrl());
-        
+
         return new DefaultFeatureToggleClient(
                 featureToggleRestTemplate,
                 properties,
-                featureToggleAsyncExecutor
-        );
+                featureToggleAsyncExecutor);
     }
-
 
     /**
      * Configuration for Spring Boot Actuator health indicator.
-     * Only activated when Actuator is on the classpath.
+     * Only activated when Actuator is on the classpath and the main FluxGateClient
+     * is available.
      */
     @Configuration
     @ConditionalOnClass(HealthIndicator.class)
@@ -86,7 +83,7 @@ public class FeatureToggleAutoConfiguration {
 
         @Bean
         @ConditionalOnMissingBean
-        public FeatureToggleHealthIndicator featureToggleHealthIndicator(DefaultFeatureToggleClient featureToggleClient) {
+        public FeatureToggleHealthIndicator featureToggleHealthIndicator(FluxGateClient featureToggleClient) {
             logger.info("Enabling FeatureToggle health indicator");
             return new FeatureToggleHealthIndicator(featureToggleClient);
         }

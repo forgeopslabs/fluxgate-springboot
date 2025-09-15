@@ -55,10 +55,13 @@ public record FeatureEvaluationRequest(
      *
      * @param featureKey    the feature key
      * @param environmentId the environment ID
-     * @param context       the evaluation context as a map
+     * @param context       the evaluation context as a map (can be null)
      * @return a new request instance
      */
     public static FeatureEvaluationRequest of(String featureKey, String environmentId, Map<String, String> context) {
+        if (context == null) {
+            return new FeatureEvaluationRequest(featureKey, environmentId, List.of());
+        }
         List<FeatureContext> contextList = context.entrySet().stream()
                 .map(entry -> new FeatureContext(entry.getKey(), entry.getValue()))
                 .toList();
@@ -108,6 +111,10 @@ public record FeatureEvaluationRequest(
         }
 
         public Builder context(Map<String, String> context) {
+            if (context == null) {
+                this.context = List.of();
+                return this;
+            }
             this.context = context.entrySet().stream()
                     .map(entry -> new FeatureContext(entry.getKey(), entry.getValue()))
                     .toList();

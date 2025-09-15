@@ -170,4 +170,12 @@ public interface FluxGateClient {
      */
     <T> T executeAndReturnWithFallback(FeatureEvaluationRequest request, Supplier<T> supplier, T fallback);
 
+    /**
+     * Checks the health of the FluxGate Edge Server.
+     * This method can be used by monitoring systems and health checks.
+     *
+     * @return true if the edge server is healthy and reachable, false otherwise
+     */
+    boolean isHealthy();
+
 }
