@@ -41,7 +41,7 @@ jobs:
         <settings>
           <servers>
             <server>
-              <id>759ef0bb-5a39-4339-a0e8-b8be5c5463ec</id>
+              <id>central</id>
               <username>${{ secrets.OSSRH_USERNAME }}</username>
               <password>${{ secrets.OSSRH_TOKEN }}</password>
             </server>
