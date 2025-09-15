@@ -41,15 +41,18 @@ jobs:
           <servers>
             <server>
               <id>ossrh</id>
-              <username>\${env.OSSRH_USERNAME}</username>
-              <password>\${env.OSSRH_TOKEN}</password>
+              <username>${{ secrets.OSSRH_USERNAME }}</username>
+              <password>${{ secrets.OSSRH_TOKEN }}</password>
             </server>
           </servers>
         </settings>
         EOF
-      env:
-        OSSRH_USERNAME: ${{ secrets.OSSRH_USERNAME }}
-        OSSRH_TOKEN: ${{ secrets.OSSRH_TOKEN }}
+
+    - name: Verify settings.xml (debug)
+      run: |
+        echo "Settings file exists: $(ls -la ~/.m2/settings.xml)"
+        echo "Settings file content (credentials masked):"
+        sed 's/<username>.*<\/username>/<username>[MASKED]<\/username>/g; s/<password>.*<\/password>/<password>[MASKED]<\/password>/g' ~/.m2/settings.xml
 
     - name: Build with Maven
       run: mvn -B package --file pom.xml
