@@ -13,7 +13,7 @@ import static org.mockito.Mockito.*;
 class FeatureToggleHealthIndicatorTest {
 
     @Mock
-    private DefaultFeatureToggleClient featureToggleClient;
+    private FluxGateClient featureToggleClient;
 
     private FeatureToggleHealthIndicator healthIndicator;
 
@@ -112,9 +112,9 @@ class FeatureToggleHealthIndicatorTest {
     }
 
     @Test
-    void shouldHandleFeatureToggleException() {
+    void shouldHandleRuntimeException() {
         // Given
-        FeatureToggleException exception = new FeatureToggleException("Service unavailable");
+        IllegalStateException exception = new IllegalStateException("Service unavailable");
         when(featureToggleClient.isHealthy()).thenThrow(exception);
 
         // When

@@ -1,5 +1,7 @@
 package com.fluxgate.starter;
 
+import com.fluxgate.starter.ofrep.OfrepTransport;
+import com.fluxgate.starter.openfeature.FluxGateProvider;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.boot.actuate.health.HealthIndicator;
@@ -8,112 +10,63 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnClass;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
-import org.springframework.boot.web.client.RestTemplateBuilder;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
-import org.springframework.retry.annotation.EnableRetry;
-import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
-import org.springframework.web.client.RestTemplate;
-
-import java.util.concurrent.Executor;
 
 /**
- * Auto-configuration for FluxGate Feature Toggle Spring Boot starter.
- * 
- * This configuration is automatically loaded when the starter is on the
- * classpath
- * and provides all necessary beans for feature toggle functionality.
+ * Auto-configuration for the FluxGate starter. Disabled with
+ * {@code fluxgate.enabled=false}.
  */
 @AutoConfiguration
 @EnableConfigurationProperties(FeatureToggleProperties.class)
-@ConditionalOnProperty(prefix = "feature.toggle", name = "enabled", havingValue = "true", matchIfMissing = true)
-@EnableRetry
+@ConditionalOnProperty(prefix = "fluxgate", name = "enabled", havingValue = "true", matchIfMissing = true)
 public class FeatureToggleAutoConfiguration {
 
     private static final Logger logger = LoggerFactory.getLogger(FeatureToggleAutoConfiguration.class);
 
     @Bean
     @ConditionalOnMissingBean
-    public RestTemplate featureToggleRestTemplate(FeatureToggleProperties properties, RestTemplateBuilder builder) {
-        logger.debug("Configuring RestTemplate for FeatureToggle with timeouts: connect={}ms, read={}ms",
-                properties.getConnectionTimeout().toMillis(), properties.getReadTimeout().toMillis());
-
-        return builder
-                .setConnectTimeout(properties.getConnectionTimeout())
-                .setReadTimeout(properties.getReadTimeout())
-                .build();
+    public OfrepTransport fluxGateOfrepTransport(FeatureToggleProperties properties) {
+        logger.debug("Configuring FluxGate OFREP transport: baseUrl={}, connectTimeout={}, readTimeout={}",
+                properties.getBaseUrl(), properties.getConnectTimeout(), properties.getReadTimeout());
+        return OfrepTransport.create(properties);
     }
 
     @Bean
     @ConditionalOnMissingBean
-    public Executor featureToggleAsyncExecutor() {
-        ThreadPoolTaskExecutor executor = new ThreadPoolTaskExecutor();
-        executor.setCorePoolSize(2);
-        executor.setMaxPoolSize(10);
-        executor.setQueueCapacity(100);
-        executor.setThreadNamePrefix("feature-toggle-async-");
-        executor.initialize();
-
-        logger.debug("Configured async executor for FeatureToggle with 2-10 threads");
-        return executor;
-    }
-
-    @Bean
-    @ConditionalOnMissingBean
-    public FluxGateClient featureToggleClient(RestTemplate featureToggleRestTemplate,
-            FeatureToggleProperties properties,
-            Executor featureToggleAsyncExecutor) {
-        logger.info("Creating FeatureToggleClient with base URL: {}", properties.getBaseUrl());
-
-        return new DefaultFeatureToggleClient(
-                featureToggleRestTemplate,
-                properties,
-                featureToggleAsyncExecutor);
+    public FluxGateClient fluxGateClient(OfrepTransport fluxGateOfrepTransport, FeatureToggleProperties properties) {
+        logger.info("Creating FluxGateClient with base URL: {}", properties.getBaseUrl());
+        return new DefaultFluxGateClient(fluxGateOfrepTransport, properties);
     }
 
     /**
-     * Configuration for Spring Boot Actuator health indicator.
-     * Only activated when Actuator is on the classpath and the main FluxGateClient
-     * is available.
+     * Spring Boot Actuator health indicator, when Actuator is on the classpath.
      */
-    @Configuration
+    @Configuration(proxyBeanMethods = false)
     @ConditionalOnClass(HealthIndicator.class)
-    @ConditionalOnProperty(prefix = "feature.toggle", name = "health-check-enabled", havingValue = "true", matchIfMissing = true)
+    @ConditionalOnProperty(prefix = "fluxgate", name = "health-check-enabled", havingValue = "true", matchIfMissing = true)
     public static class FeatureToggleHealthConfiguration {
 
         @Bean
         @ConditionalOnMissingBean
-        public FeatureToggleHealthIndicator featureToggleHealthIndicator(FluxGateClient featureToggleClient) {
+        public FeatureToggleHealthIndicator featureToggleHealthIndicator(FluxGateClient fluxGateClient) {
             logger.info("Enabling FeatureToggle health indicator");
-            return new FeatureToggleHealthIndicator(featureToggleClient);
+            return new FeatureToggleHealthIndicator(fluxGateClient);
         }
     }
 
     /**
-     * Configuration for OpenFeature provider.
-     * Only activated when OpenFeature SDK is on the classpath.
+     * OpenFeature provider, when the OpenFeature SDK is on the classpath.
      */
-    @Configuration
+    @Configuration(proxyBeanMethods = false)
     @ConditionalOnClass(name = "dev.openfeature.sdk.FeatureProvider")
     public static class OpenFeatureConfiguration {
 
         @Bean
-        @ConditionalOnMissingBean(name = "fluxGateProviderOptions")
-        public com.fluxgate.starter.openfeature.FluxGateProviderOptions fluxGateProviderOptions(
-                FeatureToggleProperties properties) {
-            return com.fluxgate.starter.openfeature.FluxGateProviderOptions.builder()
-                    .defaultEnvironmentId(properties.getOpenfeatureDefaultEnvironment())
-                    .environmentContextKey(properties.getOpenfeatureEnvironmentContextKey())
-                    .build();
-        }
-
-        @Bean
         @ConditionalOnMissingBean(name = "fluxGateProvider")
-        public com.fluxgate.starter.openfeature.FluxGateProvider fluxGateProvider(
-                FluxGateClient fluxGateClient,
-                com.fluxgate.starter.openfeature.FluxGateProviderOptions options) {
+        public FluxGateProvider fluxGateProvider(FluxGateClient fluxGateClient) {
             logger.info("Creating FluxGateProvider for OpenFeature integration");
-            return new com.fluxgate.starter.openfeature.FluxGateProvider(fluxGateClient, options);
+            return new FluxGateProvider(fluxGateClient);
         }
     }
 }

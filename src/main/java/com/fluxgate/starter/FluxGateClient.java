@@ -1,181 +1,102 @@
 package com.fluxgate.starter;
 
 import java.util.Map;
-import java.util.concurrent.CompletableFuture;
-import java.util.function.Consumer;
-import java.util.function.Supplier;
 
 /**
- * Client interface for interacting with the FluxGate Feature Toggle Edge
- * Server.
- * Provides methods to evaluate feature flags with various configuration
- * options.
+ * Typed client for the FluxGate edge server (OFREP).
+ *
+ * <p>
+ * Evaluation methods never throw: on any failure they return the caller's
+ * default value, and {@link #evaluate} reports {@code reason = "ERROR"} with an
+ * {@link ErrorCode}.
+ *
+ * <pre>{@code
+ * EvaluationContext ctx = EvaluationContext.of("user-42");
+ * boolean checkout = client.isEnabled("new-checkout", ctx);
+ * FlagEvaluation<String> banner = client.evaluate("banner", "none", String.class, ctx);
+ * }</pre>
  */
 public interface FluxGateClient {
 
     /**
-     * Evaluates whether a feature is enabled for the given feature key and
-     * environment.
+     * Evaluates a flag as {@code type}.
      *
-     * @param featureKey    the unique identifier for the feature flag
-     * @param environmentId the environment identifier (e.g., "prod", "staging",
-     *                      "dev")
-     * @return true if the feature is enabled, false otherwise
-     * @throws FeatureToggleException if the evaluation fails
+     * @param key          the flag key
+     * @param defaultValue returned on any error
+     * @param type         the expected value type ({@code Boolean},
+     *                     {@code String}, {@code Integer}, {@code Long},
+     *                     {@code Double}, {@code Map}, {@code List},
+     *                     {@code JsonNode} or {@code Object})
+     * @param context      the evaluation context, may be {@code null}
+     * @param <T>          the value type
+     * @return the evaluation; never {@code null}
      */
-    boolean isEnabled(String featureKey, String environmentId);
+    <T> FlagEvaluation<T> evaluate(String key, T defaultValue, Class<T> type, EvaluationContext context);
 
     /**
-     * Evaluates whether a feature is enabled for the given feature key,
-     * environment, and context.
+     * Evaluates every flag for {@code context}. Repeated calls for the same
+     * context send {@code If-None-Match}; on {@code 304} the previous flags are
+     * returned with {@link BulkEvaluation#changed()} {@code false}.
      *
-     * @param featureKey    the unique identifier for the feature flag
-     * @param environmentId the environment identifier (e.g., "prod", "staging",
-     *                      "dev")
-     * @param context       additional context for feature evaluation (user
-     *                      attributes, etc.)
-     * @return true if the feature is enabled, false otherwise
-     * @throws FeatureToggleException if the evaluation fails
+     * @param context the evaluation context, may be {@code null}
+     * @return the bulk result; never {@code null}
      */
-    boolean isEnabled(String featureKey, String environmentId, Map<String, String> context);
+    BulkEvaluation bulkEvaluate(EvaluationContext context);
 
     /**
-     * Evaluates whether a feature is enabled using a detailed request object.
+     * Probes the edge's {@code /health} endpoint.
      *
-     * @param request the feature evaluation request containing all necessary
-     *                parameters
-     * @return true if the feature is enabled, false otherwise
-     * @throws FeatureToggleException if the evaluation fails
-     */
-    boolean isEnabled(FeatureEvaluationRequest request);
-
-    /**
-     * Asynchronously evaluates whether a feature is enabled for the given feature
-     * key and environment.
-     *
-     * @param featureKey    the unique identifier for the feature flag
-     * @param environmentId the environment identifier (e.g., "prod", "staging",
-     *                      "dev")
-     * @return a CompletableFuture that resolves to true if the feature is enabled,
-     *         false otherwise
-     */
-    CompletableFuture<Boolean> isEnabledAsync(String featureKey, String environmentId);
-
-    /**
-     * Asynchronously evaluates whether a feature is enabled for the given feature
-     * key, environment, and context.
-     *
-     * @param featureKey    the unique identifier for the feature flag
-     * @param environmentId the environment identifier (e.g., "prod", "staging",
-     *                      "dev")
-     * @param context       additional context for feature evaluation (user
-     *                      attributes, etc.)
-     * @return a CompletableFuture that resolves to true if the feature is enabled,
-     *         false otherwise
-     */
-    CompletableFuture<Boolean> isEnabledAsync(String featureKey, String environmentId, Map<String, String> context);
-
-    /**
-     * Asynchronously evaluates whether a feature is enabled using a detailed
-     * request object.
-     *
-     * @param request the feature evaluation request containing all necessary
-     *                parameters
-     * @return a CompletableFuture that resolves to true if the feature is enabled,
-     *         false otherwise
-     */
-    CompletableFuture<Boolean> isEnabledAsync(FeatureEvaluationRequest request);
-
-    /**
-     * Evaluates a feature with a fallback value if the evaluation fails.
-     * This method never throws exceptions and returns the fallback value on any
-     * error.
-     *
-     * @param featureKey    the unique identifier for the feature flag
-     * @param environmentId the environment identifier (e.g., "prod", "staging",
-     *                      "dev")
-     * @param fallback      the value to return if evaluation fails
-     * @return the evaluation result or the fallback value
-     */
-    boolean isEnabledWithFallback(String featureKey, String environmentId, boolean fallback);
-
-    /**
-     * Evaluates a feature with a fallback value if the evaluation fails.
-     * This method never throws exceptions and returns the fallback value on any
-     * error.
-     *
-     * @param featureKey    the unique identifier for the feature flag
-     * @param environmentId the environment identifier (e.g., "prod", "staging",
-     *                      "dev")
-     * @param context       additional context for feature evaluation (user
-     *                      attributes, etc.)
-     * @param fallback      the value to return if evaluation fails
-     * @return the evaluation result or the fallback value
-     */
-    boolean isEnabledWithFallback(String featureKey, String environmentId, Map<String, String> context,
-            boolean fallback);
-
-    /**
-     * Evaluates a feature with a fallback value if the evaluation fails.
-     * This method never throws exceptions and returns the fallback value on any
-     * error.
-     *
-     * @param request  the feature evaluation request containing all necessary
-     *                 parameters
-     * @param fallback the value to return if evaluation fails
-     * @return the evaluation result or the fallback value
-     */
-    boolean isEnabledWithFallback(FeatureEvaluationRequest request, boolean fallback);
-
-    /**
-     * Executes a feature evaluation request and invoke the provided consumer
-     * depending on the evaluation result.
-     *
-     * @param request  the feature evaluation request containing all necessary
-     *                 parameters
-     * @param consumer a consumer that processes the evaluation result
-     */
-    void execute(FeatureEvaluationRequest request, Consumer<Void> consumer);
-
-    /**
-     * Executes a feature evaluation request and invokes the provided supplier
-     * if the feature is enabled, returning the supplier's result.
-     * If the feature is disabled, returns null.
-     *
-     * @param <T>      the type of the result returned by the supplier
-     * @param request  the feature evaluation request containing all necessary
-     *                 parameters
-     * @param supplier a supplier that produces the result when the feature is
-     *                 enabled
-     * @return the result from the supplier if the feature is enabled, null
-     *         otherwise
-     * @throws FeatureToggleException if the evaluation fails
-     */
-    <T> T executeAndReturn(FeatureEvaluationRequest request, Supplier<T> supplier);
-
-    /**
-     * Executes a feature evaluation request and invokes the provided supplier
-     * if the feature is enabled, returning the supplier's result.
-     * If the feature is disabled or evaluation fails, returns the fallback value.
-     *
-     * @param <T>      the type of the result returned by the supplier and fallback
-     * @param request  the feature evaluation request containing all necessary
-     *                 parameters
-     * @param supplier a supplier that produces the result when the feature is
-     *                 enabled
-     * @param fallback the value to return if the feature is disabled or evaluation
-     *                 fails
-     * @return the result from the supplier if the feature is enabled, fallback
-     *         otherwise
-     */
-    <T> T executeAndReturnWithFallback(FeatureEvaluationRequest request, Supplier<T> supplier, T fallback);
-
-    /**
-     * Checks the health of the FluxGate Edge Server.
-     * This method can be used by monitoring systems and health checks.
-     *
-     * @return true if the edge server is healthy and reachable, false otherwise
+     * @return {@code true} when the edge is connected and serving
      */
     boolean isHealthy();
 
+    default boolean isEnabled(String key) {
+        return getBoolean(key, false);
+    }
+
+    default boolean isEnabled(String key, EvaluationContext context) {
+        return getBoolean(key, false, context);
+    }
+
+    default boolean getBoolean(String key, boolean defaultValue) {
+        return getBoolean(key, defaultValue, null);
+    }
+
+    default boolean getBoolean(String key, boolean defaultValue, EvaluationContext context) {
+        return evaluate(key, defaultValue, Boolean.class, context).value();
+    }
+
+    default String getString(String key, String defaultValue) {
+        return getString(key, defaultValue, null);
+    }
+
+    default String getString(String key, String defaultValue, EvaluationContext context) {
+        return evaluate(key, defaultValue, String.class, context).value();
+    }
+
+    default int getInteger(String key, int defaultValue) {
+        return getInteger(key, defaultValue, null);
+    }
+
+    default int getInteger(String key, int defaultValue, EvaluationContext context) {
+        return evaluate(key, defaultValue, Integer.class, context).value();
+    }
+
+    default double getDouble(String key, double defaultValue) {
+        return getDouble(key, defaultValue, null);
+    }
+
+    default double getDouble(String key, double defaultValue, EvaluationContext context) {
+        return evaluate(key, defaultValue, Double.class, context).value();
+    }
+
+    default Map<String, Object> getObject(String key, Map<String, Object> defaultValue) {
+        return getObject(key, defaultValue, null);
+    }
+
+    @SuppressWarnings({ "unchecked", "rawtypes" })
+    default Map<String, Object> getObject(String key, Map<String, Object> defaultValue, EvaluationContext context) {
+        // JSON objects always have string keys.
+        return (Map<String, Object>) evaluate(key, (Map) defaultValue, Map.class, context).value();
+    }
 }

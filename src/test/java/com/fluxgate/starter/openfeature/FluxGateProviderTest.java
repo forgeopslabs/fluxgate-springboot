@@ -1,396 +1,142 @@
 package com.fluxgate.starter.openfeature;
 
-import com.fluxgate.starter.FeatureEvaluationRequest;
-import com.fluxgate.starter.FeatureToggleException;
+import com.fluxgate.starter.FlagEvaluation;
 import com.fluxgate.starter.FluxGateClient;
-import dev.openfeature.sdk.EvaluationContext;
 import dev.openfeature.sdk.ErrorCode;
 import dev.openfeature.sdk.ImmutableContext;
 import dev.openfeature.sdk.ProviderEvaluation;
-import dev.openfeature.sdk.Reason;
 import dev.openfeature.sdk.Value;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
-import java.util.HashMap;
 import java.util.Map;
 
-import static org.junit.jupiter.api.Assertions.*;
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.Mockito.*;
+import static org.mockito.ArgumentMatchers.argThat;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 
-/**
- * Unit tests for FluxGateProvider - OpenFeature FeatureProvider implementation.
- */
 @ExtendWith(MockitoExtension.class)
 class FluxGateProviderTest {
 
     @Mock
-    private FluxGateClient fluxGateClient;
+    private FluxGateClient client;
 
     private FluxGateProvider provider;
-    private FluxGateProviderOptions options;
 
     @BeforeEach
     void setUp() {
-        options = FluxGateProviderOptions.builder()
-                .defaultEnvironmentId("test-env")
-                .environmentContextKey("environment")
-                .build();
-        provider = new FluxGateProvider(fluxGateClient, options);
-    }
-
-    // ==================== Constructor Tests ====================
-
-    @Test
-    void constructor_shouldThrowException_whenClientIsNull() {
-        assertThrows(IllegalArgumentException.class,
-                () -> new FluxGateProvider(null));
+        provider = new FluxGateProvider(client);
     }
 
     @Test
-    void constructor_shouldThrowException_whenOptionsIsNull() {
-        assertThrows(IllegalArgumentException.class,
-                () -> new FluxGateProvider(fluxGateClient, null));
+    void rejectsNullClient() {
+        assertThatThrownBy(() -> new FluxGateProvider(null)).isInstanceOf(IllegalArgumentException.class);
     }
 
     @Test
-    void constructor_shouldCreateProvider_withDefaultOptions() {
-        FluxGateProvider defaultProvider = new FluxGateProvider(fluxGateClient);
-        assertNotNull(defaultProvider);
-        assertEquals("FluxGate", defaultProvider.getMetadata().getName());
-    }
-
-    // ==================== Metadata Tests ====================
-
-    @Test
-    void getMetadata_shouldReturnProviderName() {
-        assertEquals("FluxGate", provider.getMetadata().getName());
-    }
-
-    // ==================== Boolean Evaluation Tests ====================
-
-    @Test
-    void getBooleanEvaluation_shouldReturnTrue_whenFeatureEnabled() {
-        when(fluxGateClient.isEnabled(any(FeatureEvaluationRequest.class))).thenReturn(true);
-
-        ProviderEvaluation<Boolean> result = provider.getBooleanEvaluation(
-                "test-feature", false, null);
-
-        assertTrue(result.getValue());
-        assertEquals(Reason.TARGETING_MATCH.toString(), result.getReason());
-        assertNull(result.getErrorCode());
+    void metadataName() {
+        assertThat(provider.getMetadata().getName()).isEqualTo("FluxGate");
     }
 
     @Test
-    void getBooleanEvaluation_shouldReturnFalse_whenFeatureDisabled() {
-        when(fluxGateClient.isEnabled(any(FeatureEvaluationRequest.class))).thenReturn(false);
+    void initializeChecksHealthAndShutdownIsQuiet() throws Exception {
+        when(client.isHealthy()).thenReturn(false);
 
-        ProviderEvaluation<Boolean> result = provider.getBooleanEvaluation(
-                "test-feature", true, null);
+        provider.initialize(new ImmutableContext());
+        provider.shutdown();
 
-        assertFalse(result.getValue());
-        assertEquals(Reason.TARGETING_MATCH.toString(), result.getReason());
+        verify(client).isHealthy();
     }
 
     @Test
-    void getBooleanEvaluation_shouldUseEnvironmentFromContext() {
-        when(fluxGateClient.isEnabled(any(FeatureEvaluationRequest.class))).thenReturn(true);
+    void booleanEvaluationMapsValueVariantAndReason() {
+        when(client.evaluate(eq("f"), eq(false), eq(Boolean.class), any()))
+                .thenReturn(new FlagEvaluation<>("f", true, "on", "TARGETING_MATCH", null, null));
 
-        Map<String, Value> attributes = new HashMap<>();
-        attributes.put("environment", new Value("production"));
-        EvaluationContext ctx = new ImmutableContext(attributes);
+        ProviderEvaluation<Boolean> result = provider.getBooleanEvaluation("f", false, null);
 
-        provider.getBooleanEvaluation("test-feature", false, ctx);
-
-        verify(fluxGateClient).isEnabled(argThat(request -> "production".equals(request.environmentId())));
+        assertThat(result.getValue()).isTrue();
+        assertThat(result.getVariant()).isEqualTo("on");
+        assertThat(result.getReason()).isEqualTo("TARGETING_MATCH");
+        assertThat(result.getErrorCode()).isNull();
     }
 
     @Test
-    void getBooleanEvaluation_shouldUseDefaultEnvironment_whenNotInContext() {
-        when(fluxGateClient.isEnabled(any(FeatureEvaluationRequest.class))).thenReturn(true);
+    void typedEvaluationsDelegateWithTheirType() {
+        when(client.evaluate(eq("s"), eq("d"), eq(String.class), any()))
+                .thenReturn(new FlagEvaluation<>("s", "blue", "blue", "SPLIT", null, null));
+        when(client.evaluate(eq("i"), eq(0), eq(Integer.class), any()))
+                .thenReturn(new FlagEvaluation<>("i", 42, null, "STATIC", null, null));
+        when(client.evaluate(eq("d"), eq(0.0), eq(Double.class), any()))
+                .thenReturn(new FlagEvaluation<>("d", 0.15, null, "STATIC", null, null));
 
-        provider.getBooleanEvaluation("test-feature", false, null);
-
-        verify(fluxGateClient).isEnabled(argThat(request -> "test-env".equals(request.environmentId())));
+        assertThat(provider.getStringEvaluation("s", "d", null).getValue()).isEqualTo("blue");
+        assertThat(provider.getIntegerEvaluation("i", 0, null).getValue()).isEqualTo(42);
+        assertThat(provider.getDoubleEvaluation("d", 0.0, null).getValue()).isEqualTo(0.15);
     }
 
     @Test
-    void getBooleanEvaluation_shouldPassContextAttributes() {
-        when(fluxGateClient.isEnabled(any(FeatureEvaluationRequest.class))).thenReturn(true);
+    void objectEvaluationConvertsToValue() {
+        when(client.evaluate(eq("o"), eq(null), eq(Object.class), any()))
+                .thenReturn(new FlagEvaluation<>("o", Map.of("color", "dark"), "dark", "SPLIT", null, null));
 
-        Map<String, Value> attributes = new HashMap<>();
-        attributes.put("userId", new Value("user123"));
-        attributes.put("region", new Value("us-east"));
-        EvaluationContext ctx = new ImmutableContext("targeting-key", attributes);
+        ProviderEvaluation<Value> result = provider.getObjectEvaluation("o", new Value("fallback"), null);
 
-        provider.getBooleanEvaluation("test-feature", false, ctx);
-
-        verify(fluxGateClient).isEnabled(argThat(request -> {
-            var context = request.context();
-            return context.stream().anyMatch(c -> "userId".equals(c.key()) && "user123".equals(c.value())) &&
-                    context.stream().anyMatch(c -> "region".equals(c.key()) && "us-east".equals(c.value())) &&
-                    context.stream().anyMatch(c -> "targetingKey".equals(c.key()) && "targeting-key".equals(c.value()));
-        }));
+        assertThat(result.getValue().asStructure().getValue("color").asString()).isEqualTo("dark");
+        assertThat(result.getVariant()).isEqualTo("dark");
     }
 
     @Test
-    void getBooleanEvaluation_shouldReturnDefaultWithError_whenExceptionThrown() {
-        when(fluxGateClient.isEnabled(any(FeatureEvaluationRequest.class)))
-                .thenThrow(new FeatureToggleException("Network error", "test-feature", "test-env"));
+    void objectEvaluationErrorKeepsDefault() {
+        when(client.evaluate(eq("o"), eq(null), eq(Object.class), any()))
+                .thenReturn(FlagEvaluation.error("o", null, com.fluxgate.starter.ErrorCode.FLAG_NOT_FOUND, "gone"));
+        Value fallback = new Value("fallback");
 
-        ProviderEvaluation<Boolean> result = provider.getBooleanEvaluation(
-                "test-feature", true, null);
+        ProviderEvaluation<Value> result = provider.getObjectEvaluation("o", fallback, null);
 
-        assertTrue(result.getValue()); // Default value
-        assertEquals(ErrorCode.GENERAL, result.getErrorCode());
-        assertEquals(Reason.ERROR.toString(), result.getReason());
-        assertNotNull(result.getErrorMessage());
+        assertThat(result.getValue()).isSameAs(fallback);
+        assertThat(result.getErrorCode()).isEqualTo(ErrorCode.FLAG_NOT_FOUND);
+    }
+
+    @ParameterizedTest
+    @CsvSource({
+            "FLAG_NOT_FOUND, FLAG_NOT_FOUND",
+            "TYPE_MISMATCH, TYPE_MISMATCH",
+            "TARGETING_KEY_MISSING, TARGETING_KEY_MISSING",
+            "INVALID_CONTEXT, INVALID_CONTEXT",
+            "PROVIDER_NOT_READY, PROVIDER_NOT_READY",
+            "UNAUTHORIZED, GENERAL",
+            "GENERAL, GENERAL" })
+    void mapsErrorCodes(com.fluxgate.starter.ErrorCode code, ErrorCode expected) {
+        when(client.evaluate(eq("f"), eq(true), eq(Boolean.class), any()))
+                .thenReturn(FlagEvaluation.error("f", true, code, "detail"));
+
+        ProviderEvaluation<Boolean> result = provider.getBooleanEvaluation("f", true, null);
+
+        assertThat(result.getValue()).isTrue();
+        assertThat(result.getReason()).isEqualTo("ERROR");
+        assertThat(result.getErrorCode()).isEqualTo(expected);
+        assertThat(result.getErrorMessage()).isEqualTo("detail");
     }
 
     @Test
-    void getBooleanEvaluation_shouldReturnFlagNotFound_when404() {
-        when(fluxGateClient.isEnabled(any(FeatureEvaluationRequest.class)))
-                .thenThrow(new FeatureToggleException("Not found", "test-feature", "test-env", 404));
-
-        ProviderEvaluation<Boolean> result = provider.getBooleanEvaluation(
-                "unknown-feature", false, null);
-
-        assertEquals(ErrorCode.FLAG_NOT_FOUND, result.getErrorCode());
-    }
-
-    @Test
-    void getBooleanEvaluation_shouldReturnProviderNotReady_when401() {
-        when(fluxGateClient.isEnabled(any(FeatureEvaluationRequest.class)))
-                .thenThrow(new FeatureToggleException("Unauthorized", "test-feature", "test-env", 401));
-
-        ProviderEvaluation<Boolean> result = provider.getBooleanEvaluation(
-                "test-feature", false, null);
-
-        assertEquals(ErrorCode.PROVIDER_NOT_READY, result.getErrorCode());
-    }
-
-    // ==================== String Evaluation Tests ====================
-
-    @Test
-    void getStringEvaluation_shouldReturnTrueAsString_whenFeatureEnabled() {
-        when(fluxGateClient.isEnabled(any(FeatureEvaluationRequest.class))).thenReturn(true);
-
-        ProviderEvaluation<String> result = provider.getStringEvaluation(
-                "test-feature", "default", null);
-
-        assertEquals("true", result.getValue());
-        assertEquals(Reason.TARGETING_MATCH.toString(), result.getReason());
-    }
-
-    @Test
-    void getStringEvaluation_shouldReturnFalseAsString_whenFeatureDisabled() {
-        when(fluxGateClient.isEnabled(any(FeatureEvaluationRequest.class))).thenReturn(false);
-
-        ProviderEvaluation<String> result = provider.getStringEvaluation(
-                "test-feature", "default", null);
-
-        assertEquals("false", result.getValue());
-    }
-
-    @Test
-    void getStringEvaluation_shouldReturnDefaultWithError_whenExceptionThrown() {
-        when(fluxGateClient.isEnabled(any(FeatureEvaluationRequest.class)))
-                .thenThrow(new FeatureToggleException("Error", "test-feature", "test-env"));
-
-        ProviderEvaluation<String> result = provider.getStringEvaluation(
-                "test-feature", "fallback", null);
-
-        assertEquals("fallback", result.getValue());
-        assertEquals(ErrorCode.GENERAL, result.getErrorCode());
-    }
-
-    // ==================== Integer Evaluation Tests ====================
-
-    @Test
-    void getIntegerEvaluation_shouldReturn1_whenFeatureEnabled() {
-        when(fluxGateClient.isEnabled(any(FeatureEvaluationRequest.class))).thenReturn(true);
-
-        ProviderEvaluation<Integer> result = provider.getIntegerEvaluation(
-                "test-feature", 0, null);
-
-        assertEquals(1, result.getValue());
-        assertEquals(Reason.TARGETING_MATCH.toString(), result.getReason());
-    }
-
-    @Test
-    void getIntegerEvaluation_shouldReturn0_whenFeatureDisabled() {
-        when(fluxGateClient.isEnabled(any(FeatureEvaluationRequest.class))).thenReturn(false);
-
-        ProviderEvaluation<Integer> result = provider.getIntegerEvaluation(
-                "test-feature", 99, null);
-
-        assertEquals(0, result.getValue());
-    }
-
-    @Test
-    void getIntegerEvaluation_shouldReturnDefaultWithError_whenExceptionThrown() {
-        when(fluxGateClient.isEnabled(any(FeatureEvaluationRequest.class)))
-                .thenThrow(new FeatureToggleException("Error", "test-feature", "test-env"));
-
-        ProviderEvaluation<Integer> result = provider.getIntegerEvaluation(
-                "test-feature", 42, null);
-
-        assertEquals(42, result.getValue());
-        assertEquals(ErrorCode.GENERAL, result.getErrorCode());
-    }
-
-    // ==================== Double Evaluation Tests ====================
-
-    @Test
-    void getDoubleEvaluation_shouldReturn1Point0_whenFeatureEnabled() {
-        when(fluxGateClient.isEnabled(any(FeatureEvaluationRequest.class))).thenReturn(true);
-
-        ProviderEvaluation<Double> result = provider.getDoubleEvaluation(
-                "test-feature", 0.0, null);
-
-        assertEquals(1.0, result.getValue());
-        assertEquals(Reason.TARGETING_MATCH.toString(), result.getReason());
-    }
-
-    @Test
-    void getDoubleEvaluation_shouldReturn0Point0_whenFeatureDisabled() {
-        when(fluxGateClient.isEnabled(any(FeatureEvaluationRequest.class))).thenReturn(false);
-
-        ProviderEvaluation<Double> result = provider.getDoubleEvaluation(
-                "test-feature", 99.9, null);
-
-        assertEquals(0.0, result.getValue());
-    }
-
-    @Test
-    void getDoubleEvaluation_shouldReturnDefaultWithError_whenExceptionThrown() {
-        when(fluxGateClient.isEnabled(any(FeatureEvaluationRequest.class)))
-                .thenThrow(new FeatureToggleException("Error", "test-feature", "test-env"));
-
-        ProviderEvaluation<Double> result = provider.getDoubleEvaluation(
-                "test-feature", 3.14, null);
-
-        assertEquals(3.14, result.getValue());
-        assertEquals(ErrorCode.GENERAL, result.getErrorCode());
-    }
-
-    // ==================== Object Evaluation Tests ====================
-
-    @Test
-    void getObjectEvaluation_shouldReturnValueTrue_whenFeatureEnabled() {
-        when(fluxGateClient.isEnabled(any(FeatureEvaluationRequest.class))).thenReturn(true);
-
-        ProviderEvaluation<Value> result = provider.getObjectEvaluation(
-                "test-feature", new Value(false), null);
-
-        assertTrue(result.getValue().asBoolean());
-        assertEquals(Reason.TARGETING_MATCH.toString(), result.getReason());
-    }
-
-    @Test
-    void getObjectEvaluation_shouldReturnValueFalse_whenFeatureDisabled() {
-        when(fluxGateClient.isEnabled(any(FeatureEvaluationRequest.class))).thenReturn(false);
-
-        ProviderEvaluation<Value> result = provider.getObjectEvaluation(
-                "test-feature", new Value(true), null);
-
-        assertFalse(result.getValue().asBoolean());
-    }
-
-    @Test
-    void getObjectEvaluation_shouldReturnDefaultWithError_whenExceptionThrown() {
-        when(fluxGateClient.isEnabled(any(FeatureEvaluationRequest.class)))
-                .thenThrow(new FeatureToggleException("Error", "test-feature", "test-env"));
-
-        Value defaultValue = new Value("custom-default");
-        ProviderEvaluation<Value> result = provider.getObjectEvaluation(
-                "test-feature", defaultValue, null);
-
-        assertEquals(defaultValue, result.getValue());
-        assertEquals(ErrorCode.GENERAL, result.getErrorCode());
-    }
-
-    // ==================== Initialization and Shutdown Tests ====================
-
-    @Test
-    void initialize_shouldCallHealthCheck() throws Exception {
-        when(fluxGateClient.isHealthy()).thenReturn(true);
-
-        provider.initialize(null);
-
-        verify(fluxGateClient).isHealthy();
-    }
-
-    @Test
-    void initialize_shouldNotThrow_whenUnhealthy() throws Exception {
-        when(fluxGateClient.isHealthy()).thenReturn(false);
-
-        // Should not throw
-        assertDoesNotThrow(() -> provider.initialize(null));
-    }
-
-    @Test
-    void shutdown_shouldCompleteWithoutError() {
-        assertDoesNotThrow(() -> provider.shutdown());
-    }
-
-    // ==================== Context Conversion Tests ====================
-
-    @Test
-    void getBooleanEvaluation_shouldHandleNumericContext() {
-        when(fluxGateClient.isEnabled(any(FeatureEvaluationRequest.class))).thenReturn(true);
-
-        Map<String, Value> attributes = new HashMap<>();
-        attributes.put("count", new Value(42));
-        attributes.put("price", new Value(19.99));
-        EvaluationContext ctx = new ImmutableContext(attributes);
-
-        provider.getBooleanEvaluation("test-feature", false, ctx);
-
-        verify(fluxGateClient).isEnabled(argThat(request -> {
-            var context = request.context();
-            return context.stream().anyMatch(c -> "count".equals(c.key())) &&
-                    context.stream().anyMatch(c -> "price".equals(c.key()));
-        }));
-    }
-
-    @Test
-    void getBooleanEvaluation_shouldHandleBooleanContext() {
-        when(fluxGateClient.isEnabled(any(FeatureEvaluationRequest.class))).thenReturn(true);
-
-        Map<String, Value> attributes = new HashMap<>();
-        attributes.put("premium", new Value(true));
-        EvaluationContext ctx = new ImmutableContext(attributes);
-
-        provider.getBooleanEvaluation("test-feature", false, ctx);
-
-        verify(fluxGateClient).isEnabled(argThat(request -> {
-            var context = request.context();
-            return context.stream().anyMatch(c -> "premium".equals(c.key()) && "true".equals(c.value()));
-        }));
-    }
-
-    @Test
-    void getBooleanEvaluation_shouldSkipEnvironmentKeyInContext() {
-        when(fluxGateClient.isEnabled(any(FeatureEvaluationRequest.class))).thenReturn(true);
-
-        Map<String, Value> attributes = new HashMap<>();
-        attributes.put("environment", new Value("production"));
-        attributes.put("userId", new Value("user123"));
-        EvaluationContext ctx = new ImmutableContext(attributes);
-
-        provider.getBooleanEvaluation("test-feature", false, ctx);
-
-        verify(fluxGateClient).isEnabled(argThat(request -> {
-            var context = request.context();
-            // environment should be used as environmentId, not in context
-            return "production".equals(request.environmentId()) &&
-                    context.stream().noneMatch(c -> "environment".equals(c.key())) &&
-                    context.stream().anyMatch(c -> "userId".equals(c.key()));
-        }));
+    void convertsContextWithoutEnvironmentHandling() {
+        when(client.evaluate(eq("f"), eq(false), eq(Boolean.class), any()))
+                .thenReturn(new FlagEvaluation<>("f", true, null, "STATIC", null, null));
+
+        provider.getBooleanEvaluation("f", false, new ImmutableContext("user-1",
+                Map.of("environment", new Value("prod"), "tier", new Value("gold"))));
+
+        verify(client).evaluate(eq("f"), eq(false), eq(Boolean.class), argThat(ctx -> "user-1".equals(ctx.getTargetingKey())
+                && ctx.getAttributes().equals(Map.of("environment", "prod", "tier", "gold"))));
     }
 }
