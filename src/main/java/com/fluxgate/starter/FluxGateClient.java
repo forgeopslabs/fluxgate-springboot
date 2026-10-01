@@ -50,6 +50,14 @@ public interface FluxGateClient {
      */
     boolean isHealthy();
 
+    /**
+     * Drops cached evaluations so the next evaluation asks the edge again. The
+     * OpenFeature provider calls this when the flag-set version changes. The
+     * default does nothing, for clients without a cache.
+     */
+    default void invalidateCache() {
+    }
+
     default boolean isEnabled(String key) {
         return getBoolean(key, false);
     }

@@ -25,6 +25,9 @@ class FeatureTogglePropertiesTest {
         assertThat(properties.getCache().isEnabled()).isTrue();
         assertThat(properties.getCache().getTtl()).isEqualTo(Duration.ofSeconds(30));
         assertThat(properties.getCache().getMaxSize()).isEqualTo(1000);
+        assertThat(properties.getPolling().getInterval()).isEqualTo(Duration.ofSeconds(30));
+        assertThat(properties.getOpenfeature().isAutoRegister()).isFalse();
+        assertThat(properties.getOpenfeature().getProviderName()).isNull();
     }
 
     @Test
@@ -43,8 +46,9 @@ class FeatureTogglePropertiesTest {
                 Map.entry("fluxgate.metrics-enabled", "false"),
                 Map.entry("fluxgate.health-check-enabled", "false"),
                 Map.entry("fluxgate.health-check-interval", "10s"),
-                Map.entry("fluxgate.openfeature-provider-name", "edge"),
-                Map.entry("fluxgate.openfeature-auto-register", "true"));
+                Map.entry("fluxgate.polling.interval", "0"),
+                Map.entry("fluxgate.openfeature.provider-name", "edge"),
+                Map.entry("fluxgate.openfeature.auto-register", "true"));
 
         FeatureToggleProperties properties = new Binder(new MapConfigurationPropertySource(source))
                 .bind("fluxgate", FeatureToggleProperties.class).get();
@@ -62,8 +66,9 @@ class FeatureTogglePropertiesTest {
         assertThat(properties.isMetricsEnabled()).isFalse();
         assertThat(properties.isHealthCheckEnabled()).isFalse();
         assertThat(properties.getHealthCheckInterval()).isEqualTo(Duration.ofSeconds(10));
-        assertThat(properties.getOpenfeatureProviderName()).isEqualTo("edge");
-        assertThat(properties.isOpenfeatureAutoRegister()).isTrue();
+        assertThat(properties.getPolling().getInterval()).isZero();
+        assertThat(properties.getOpenfeature().getProviderName()).isEqualTo("edge");
+        assertThat(properties.getOpenfeature().isAutoRegister()).isTrue();
     }
 
     @Test
@@ -74,7 +79,8 @@ class FeatureTogglePropertiesTest {
         properties.setSdkKey("client.super-secret");
 
         assertThat(properties.toString())
-                .contains("[REDACTED]", "maxAttempts=3", "ttl=PT30S")
+                .contains("[REDACTED]", "maxAttempts=3", "ttl=PT30S", "polling={interval=PT30S}",
+                        "openfeature={autoRegister=false, providerName=null}")
                 .doesNotContain("super-secret");
     }
 }

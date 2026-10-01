@@ -21,6 +21,11 @@ import java.time.Duration;
  *     enabled: true
  *     ttl: 30s
  *     max-size: 1000
+ *   polling:
+ *     interval: 30s
+ *   openfeature:
+ *     auto-register: false
+ *     provider-name: # unset: default provider
  * </pre>
  */
 @ConfigurationProperties(prefix = "fluxgate")
@@ -56,6 +61,10 @@ public class FeatureToggleProperties {
 
     private final Cache cache = new Cache();
 
+    private final Polling polling = new Polling();
+
+    private final OpenFeature openfeature = new OpenFeature();
+
     /**
      * Whether to enable metrics collection using Micrometer.
      */
@@ -71,16 +80,6 @@ public class FeatureToggleProperties {
      */
     private Duration healthCheckInterval = Duration.ofSeconds(30);
 
-    /**
-     * Provider name for OpenFeature domain registration.
-     */
-    private String openfeatureProviderName = "fluxgate";
-
-    /**
-     * Whether to automatically register the FluxGate provider with
-     * OpenFeatureAPI.
-     */
-    private boolean openfeatureAutoRegister = false;
 
     public boolean isEnabled() {
         return enabled;
@@ -154,20 +153,12 @@ public class FeatureToggleProperties {
         this.healthCheckInterval = healthCheckInterval;
     }
 
-    public String getOpenfeatureProviderName() {
-        return openfeatureProviderName;
+    public Polling getPolling() {
+        return polling;
     }
 
-    public void setOpenfeatureProviderName(String openfeatureProviderName) {
-        this.openfeatureProviderName = openfeatureProviderName;
-    }
-
-    public boolean isOpenfeatureAutoRegister() {
-        return openfeatureAutoRegister;
-    }
-
-    public void setOpenfeatureAutoRegister(boolean openfeatureAutoRegister) {
-        this.openfeatureAutoRegister = openfeatureAutoRegister;
+    public OpenFeature getOpenfeature() {
+        return openfeature;
     }
 
     @Override
@@ -180,6 +171,8 @@ public class FeatureToggleProperties {
                 ", readTimeout=" + readTimeout +
                 ", retry=" + retry +
                 ", cache=" + cache +
+                ", polling=" + polling +
+                ", openfeature=" + openfeature +
                 '}';
     }
 
@@ -268,6 +261,71 @@ public class FeatureToggleProperties {
         @Override
         public String toString() {
             return "{enabled=" + enabled + ", ttl=" + ttl + ", maxSize=" + maxSize + '}';
+        }
+    }
+
+    /**
+     * Change detection for the OpenFeature provider.
+     */
+    public static class Polling {
+
+        /**
+         * How often the OpenFeature provider revalidates the flag set with a
+         * conditional bulk evaluation. {@code 0} disables polling, which also
+         * disables recovery after a failed initialization.
+         */
+        private Duration interval = Duration.ofSeconds(30);
+
+        public Duration getInterval() {
+            return interval;
+        }
+
+        public void setInterval(Duration interval) {
+            this.interval = interval;
+        }
+
+        @Override
+        public String toString() {
+            return "{interval=" + interval + '}';
+        }
+    }
+
+    /**
+     * OpenFeature integration settings.
+     */
+    public static class OpenFeature {
+
+        /**
+         * Whether to register the FluxGate provider with {@code OpenFeatureAPI}
+         * at startup.
+         */
+        private boolean autoRegister = false;
+
+        /**
+         * OpenFeature domain to register the provider under. When unset the
+         * provider becomes the default provider.
+         */
+        private String providerName;
+
+        public boolean isAutoRegister() {
+            return autoRegister;
+        }
+
+        public void setAutoRegister(boolean autoRegister) {
+            this.autoRegister = autoRegister;
+        }
+
+        public String getProviderName() {
+            return providerName;
+        }
+
+        public void setProviderName(String providerName) {
+            this.providerName = providerName;
+        }
+
+        @Override
+        public String toString() {
+            return "{autoRegister=" + autoRegister + ", providerName=" + providerName + '}';
         }
     }
 }

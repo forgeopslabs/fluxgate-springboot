@@ -1,11 +1,11 @@
 package com.fluxgate.starter;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fluxgate.starter.cache.BulkSnapshotStore;
 import com.fluxgate.starter.cache.EvaluationCache;
 import com.fluxgate.starter.ofrep.OfrepBulkResult;
 import com.fluxgate.starter.ofrep.OfrepException;
 import com.fluxgate.starter.ofrep.OfrepFlagResult;
+import com.fluxgate.starter.ofrep.OfrepObjectMapper;
 import com.fluxgate.starter.ofrep.OfrepTransport;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -25,7 +25,7 @@ public class DefaultFluxGateClient implements FluxGateClient {
     private final OfrepTransport transport;
     private final EvaluationCache cache;
     private final BulkSnapshotStore snapshots;
-    private final FlagValueConverter converter = new FlagValueConverter(new ObjectMapper());
+    private final FlagValueConverter converter = new FlagValueConverter(OfrepObjectMapper.create());
 
     /**
      * @param transport  the edge transport
@@ -105,6 +105,11 @@ public class DefaultFluxGateClient implements FluxGateClient {
     @Override
     public boolean isHealthy() {
         return transport.health();
+    }
+
+    @Override
+    public void invalidateCache() {
+        cache.invalidateAll();
     }
 
     private OfrepFlagResult fetch(String key, EvaluationContext ctx) {

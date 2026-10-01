@@ -12,6 +12,8 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 
 import java.time.Duration;
+import java.time.Instant;
+import java.time.LocalDate;
 import java.util.List;
 import java.util.Map;
 
@@ -87,6 +89,24 @@ class DefaultFluxGateClientTest {
                     .withRequestBody(equalToJson(
                             "{\"context\": {\"targetingKey\": \"user-42\", \"country\": \"LK\","
                                     + " \"plan\": {\"tier\": \"gold\"}}}")));
+        }
+
+        @Test
+        void javaTimeAttributesAreSentAsIso8601Strings() {
+            stubFlag("new-checkout", 200, fixture("flag-boolean.json"));
+            EvaluationContext ctx = EvaluationContext.builder()
+                    .targetingKey("user-42")
+                    .attribute("signedUpAt", Instant.parse("2026-10-01T12:30:00Z"))
+                    .attribute("birthday", LocalDate.of(1990, 5, 17))
+                    .build();
+
+            FlagEvaluation<Boolean> result = client.evaluate("new-checkout", false, Boolean.class, ctx);
+
+            assertThat(result.isError()).isFalse();
+            assertThat(result.value()).isTrue();
+            edge.verify(postRequestedFor(urlEqualTo(FLAG_PATH + "new-checkout"))
+                    .withRequestBody(equalToJson("{\"context\": {\"targetingKey\": \"user-42\","
+                            + " \"signedUpAt\": \"2026-10-01T12:30:00Z\", \"birthday\": \"1990-05-17\"}}")));
         }
 
         @Test
@@ -490,6 +510,17 @@ class DefaultFluxGateClientTest {
                     .build())).isTrue();
 
             assertThat(flagRequests("new-checkout")).isEqualTo(1);
+        }
+
+        @Test
+        void invalidateCacheForcesANewEdgeCall() {
+            stubFlag("new-checkout", 200, fixture("flag-boolean.json"));
+            client.isEnabled("new-checkout", USER);
+
+            client.invalidateCache();
+            client.isEnabled("new-checkout", USER);
+
+            assertThat(flagRequests("new-checkout")).isEqualTo(2);
         }
 
         @Test

@@ -46,6 +46,19 @@ class EvaluationCacheTest {
     }
 
     @Test
+    void invalidateAllDropsEveryEntry() {
+        EvaluationCache cache = EvaluationCache.from(settings(true, Duration.ofMinutes(1)));
+        cache.put("f", CTX, HIT);
+        cache.put("g", CTX, HIT);
+
+        cache.invalidateAll();
+
+        assertThat(cache.get("f", CTX)).isNull();
+        assertThat(cache.get("g", CTX)).isNull();
+        EvaluationCache.from(settings(false, Duration.ofMinutes(1))).invalidateAll();
+    }
+
+    @Test
     void disabledCacheStoresNothing() {
         EvaluationCache cache = EvaluationCache.from(settings(false, Duration.ofMinutes(1)));
 

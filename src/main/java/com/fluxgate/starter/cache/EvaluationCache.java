@@ -53,4 +53,14 @@ public final class EvaluationCache {
             cache.put(new Key(flagKey, context), result);
         }
     }
+
+    /**
+     * Drops every cached evaluation, for example after the edge reports a new
+     * flag-set version.
+     */
+    public void invalidateAll() {
+        if (cache != null) {
+            cache.invalidateAll();
+        }
+    }
 }

@@ -67,7 +67,7 @@ public class OfrepTransport {
         return new OfrepTransport(
                 OfrepRestClientFactory.create(properties),
                 new RetryExecutor(retryProperties.getMaxAttempts(), retryProperties.getInitialBackoff()),
-                new ObjectMapper());
+                OfrepObjectMapper.create());
     }
 
     /**

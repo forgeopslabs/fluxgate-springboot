@@ -2,6 +2,8 @@ package com.fluxgate.starter;
 
 import com.fluxgate.starter.ofrep.OfrepTransport;
 import com.fluxgate.starter.openfeature.FluxGateProvider;
+import com.fluxgate.starter.openfeature.OpenFeatureRegistrar;
+import dev.openfeature.sdk.OpenFeatureAPI;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.boot.actuate.health.HealthIndicator;
@@ -62,11 +64,20 @@ public class FeatureToggleAutoConfiguration {
     @ConditionalOnClass(name = "dev.openfeature.sdk.FeatureProvider")
     public static class OpenFeatureConfiguration {
 
-        @Bean
+        @Bean(destroyMethod = "shutdown")
         @ConditionalOnMissingBean(name = "fluxGateProvider")
-        public FluxGateProvider fluxGateProvider(FluxGateClient fluxGateClient) {
+        public FluxGateProvider fluxGateProvider(FluxGateClient fluxGateClient, FeatureToggleProperties properties) {
             logger.info("Creating FluxGateProvider for OpenFeature integration");
-            return new FluxGateProvider(fluxGateClient);
+            return new FluxGateProvider(fluxGateClient, properties.getPolling().getInterval());
+        }
+
+        @Bean
+        @ConditionalOnMissingBean
+        @ConditionalOnProperty(prefix = "fluxgate.openfeature", name = "auto-register", havingValue = "true")
+        public OpenFeatureRegistrar fluxGateOpenFeatureRegistrar(FluxGateProvider fluxGateProvider,
+                FeatureToggleProperties properties) {
+            return new OpenFeatureRegistrar(OpenFeatureAPI.getInstance(), fluxGateProvider,
+                    properties.getOpenfeature().getProviderName());
         }
     }
 }

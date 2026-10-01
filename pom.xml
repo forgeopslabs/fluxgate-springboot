@@ -85,6 +85,12 @@
             <artifactId>jackson-databind</artifactId>
         </dependency>
 
+        <!-- java.time support for evaluation context attributes (ISO-8601) -->
+        <dependency>
+            <groupId>com.fasterxml.jackson.datatype</groupId>
+            <artifactId>jackson-datatype-jsr310</artifactId>
+        </dependency>
+
         <!-- Evaluation cache -->
         <dependency>
             <groupId>com.github.ben-manes.caffeine</groupId>
