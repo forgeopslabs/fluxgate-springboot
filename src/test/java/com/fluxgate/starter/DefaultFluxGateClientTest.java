@@ -32,6 +32,7 @@ import static com.github.tomakehurst.wiremock.client.WireMock.postRequestedFor;
 import static com.github.tomakehurst.wiremock.client.WireMock.urlEqualTo;
 import static com.github.tomakehurst.wiremock.core.WireMockConfiguration.wireMockConfig;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 class DefaultFluxGateClientTest {
 
@@ -129,7 +130,22 @@ class DefaultFluxGateClientTest {
             assertThat(result.value()).isEqualTo("blue");
             assertThat(result.variant()).isEqualTo("blue");
             assertThat(result.reason()).isEqualTo("SPLIT");
+            assertThat(result.metadata()).containsExactly(Map.entry("experiment", "banner-2026"));
             assertThat(client.getString("banner-color", "red", USER)).isEqualTo("blue");
+        }
+
+        @Test
+        void metadataIsImmutableAndEmptyWhenAbsentOrOnError() {
+            stubFlag("banner-color", 200, fixture("flag-string.json"));
+            stubFlag("new-checkout", 200, fixture("flag-boolean.json"));
+            stubFlag("missing", 404, fixture("error-flag-not-found.json"));
+
+            Map<String, Object> metadata = client.evaluate("banner-color", "red", String.class, USER).metadata();
+
+            assertThatThrownBy(() -> metadata.put("x", 1))
+                    .isInstanceOf(UnsupportedOperationException.class);
+            assertThat(client.evaluate("new-checkout", false, Boolean.class, USER).metadata()).isEmpty();
+            assertThat(client.evaluate("missing", false, Boolean.class, USER).metadata()).isEmpty();
         }
 
         @Test
@@ -198,22 +214,15 @@ class DefaultFluxGateClientTest {
             stubFlag("new-checkout", 200, fixture("flag-boolean.json"));
 
             assertThat(client.isEnabled("new-checkout", USER)).isTrue();
-            assertThat(client.isEnabled("new-checkout")).isTrue();
-            assertThat(client.getBoolean("new-checkout", false)).isTrue();
+            assertThat(client.getBoolean("new-checkout", false, USER)).isTrue();
+            // Without a context there is no targeting key: defaults, decided locally.
+            assertThat(client.isEnabled("new-checkout")).isFalse();
+            assertThat(client.getBoolean("new-checkout", true)).isTrue();
             assertThat(client.getString("new-checkout", "x")).isEqualTo("x");
             assertThat(client.getInteger("new-checkout", 7)).isEqualTo(7);
             assertThat(client.getDouble("new-checkout", 1.5)).isEqualTo(1.5);
             assertThat(client.getObject("new-checkout", Map.of("a", 1))).isEqualTo(Map.of("a", 1));
-        }
-
-        @Test
-        void contextlessEvaluationSendsEmptyTargetingKey() {
-            stubFlag("new-checkout", 200, fixture("flag-boolean.json"));
-
-            client.evaluate("new-checkout", false, Boolean.class, null);
-
-            edge.verify(postRequestedFor(urlEqualTo(FLAG_PATH + "new-checkout"))
-                    .withRequestBody(equalToJson("{\"context\": {\"targetingKey\": \"\"}}")));
+            assertThat(flagRequests("new-checkout")).isEqualTo(2);
         }
 
         @Test
@@ -245,14 +254,32 @@ class DefaultFluxGateClientTest {
         }
 
         @Test
-        void targetingKeyMissing() {
+        void edgeTargetingKeyMissingIsMapped() {
             stubFlag("new-checkout", 400, fixture("error-targeting-key-missing.json"));
 
-            FlagEvaluation<Boolean> result = client.evaluate("new-checkout", false, Boolean.class, null);
+            FlagEvaluation<Boolean> result = client.evaluate("new-checkout", false, Boolean.class, USER);
 
             assertThat(result.errorCode()).isEqualTo(ErrorCode.TARGETING_KEY_MISSING);
             assertThat(result.reason()).isEqualTo("ERROR");
             assertThat(flagRequests("new-checkout")).isEqualTo(1);
+        }
+
+        @ParameterizedTest
+        @ValueSource(strings = { "", "  " })
+        void missingTargetingKeyFailsLocallyWithoutARequest(String targetingKey) {
+            stubFlag("new-checkout", 200, fixture("flag-boolean.json"));
+
+            FlagEvaluation<Boolean> blank = client.evaluate("new-checkout", true, Boolean.class,
+                    EvaluationContext.of(targetingKey));
+            FlagEvaluation<Boolean> none = client.evaluate("new-checkout", true, Boolean.class, null);
+            BulkEvaluation bulk = client.bulkEvaluate(EvaluationContext.empty());
+
+            assertThat(blank.errorCode()).isEqualTo(ErrorCode.TARGETING_KEY_MISSING);
+            assertThat(blank.value()).isTrue();
+            assertThat(none.errorCode()).isEqualTo(ErrorCode.TARGETING_KEY_MISSING);
+            assertThat(none.errorMessage()).contains("no targeting key");
+            assertThat(bulk.errorCode()).isEqualTo(ErrorCode.TARGETING_KEY_MISSING);
+            assertThat(edge.getAllServeEvents()).isEmpty();
         }
 
         @Test
@@ -648,7 +675,7 @@ class DefaultFluxGateClientTest {
             edge.stubFor(post(urlEqualTo(BULK_PATH))
                     .willReturn(aResponse().withStatus(401).withBody(fixture("error-unauthorized.json"))));
 
-            BulkEvaluation result = client.bulkEvaluate(null);
+            BulkEvaluation result = client.bulkEvaluate(USER);
 
             assertThat(result.errorCode()).isEqualTo(ErrorCode.UNAUTHORIZED);
             assertThat(result.flags()).isEmpty();

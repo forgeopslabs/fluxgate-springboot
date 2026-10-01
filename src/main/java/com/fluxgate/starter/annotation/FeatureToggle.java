@@ -20,7 +20,10 @@ import java.lang.annotation.Target;
  * When the flag evaluates to {@code true} the method runs. Otherwise, including
  * when the evaluation fails, the fallback method runs if one is named, else the
  * call returns the default for the return type: {@code null},
- * {@code Optional.empty()}, {@code false} or zero for primitives.
+ * {@code Optional.empty()}, {@code false} or zero for primitives. The flag is
+ * evaluated synchronously on the calling thread; asynchronous or reactive return
+ * types ({@code CompletableFuture}, {@code Mono}, ...) get {@code null} when the
+ * flag is off without a fallback, so give them a fallback.
  *
  * <p>
  * The evaluation context comes from the {@link EvaluationContextResolver} bean;

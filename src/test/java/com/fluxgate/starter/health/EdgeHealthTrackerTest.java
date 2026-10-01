@@ -44,7 +44,7 @@ class EdgeHealthTrackerTest {
     }
 
     @ParameterizedTest
-    @EnumSource(value = ErrorCode.class, names = { "FLAG_NOT_FOUND", "TYPE_MISMATCH", "TARGETING_KEY_MISSING" })
+    @EnumSource(value = ErrorCode.class, names = { "FLAG_NOT_FOUND", "TYPE_MISMATCH" })
     void answersAboutTheRequestProveTheEdgeIsServing(ErrorCode code) {
         tracker.onEvaluation(FlagEvaluation.error("f", false, code, "detail"), false, 1);
 
@@ -53,11 +53,13 @@ class EdgeHealthTrackerTest {
     }
 
     @Test
-    void ignoresCacheHitsAndInvalidContexts() {
+    void ignoresCacheHitsAndLocallyRejectedCalls() {
         tracker.onEvaluation(FlagEvaluation.error("f", false, ErrorCode.GENERAL, "down"), false, 1);
 
         tracker.onEvaluation(new FlagEvaluation<>("f", true, null, "STATIC", null, null), true, 1);
         tracker.onEvaluation(FlagEvaluation.error("f", false, ErrorCode.INVALID_CONTEXT, "bad"), false, 1);
+        tracker.onEvaluation(FlagEvaluation.error("f", false, ErrorCode.TARGETING_KEY_MISSING, "none"), false, 1);
+        tracker.onBulkEvaluation(BulkEvaluation.error(ErrorCode.TARGETING_KEY_MISSING, "none"));
 
         assertThat(tracker.lastOutcome().success()).isFalse();
     }

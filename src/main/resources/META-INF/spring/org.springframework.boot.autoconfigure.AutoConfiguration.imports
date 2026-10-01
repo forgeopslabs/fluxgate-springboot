@@ -1,4 +1,5 @@
 com.fluxgate.starter.FeatureToggleAutoConfiguration
+com.fluxgate.starter.DisabledFluxGateAutoConfiguration
 com.fluxgate.starter.metrics.FluxGateMetricsAutoConfiguration
 com.fluxgate.starter.health.FluxGateHealthAutoConfiguration
 com.fluxgate.starter.aop.FeatureToggleAspectAutoConfiguration

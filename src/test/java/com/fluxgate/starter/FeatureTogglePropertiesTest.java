@@ -36,6 +36,8 @@ class FeatureTogglePropertiesTest {
         assertThat(properties.getOpenfeature().getProviderName()).isNull();
         assertThat(properties.getHealth().isEnabled()).isTrue();
         assertThat(properties.getMetrics().isEnabled()).isTrue();
+        assertThat(properties.getCircuitBreaker().getFailureThreshold()).isEqualTo(5);
+        assertThat(properties.getCircuitBreaker().getOpenDuration()).isEqualTo(Duration.ofSeconds(30));
     }
 
     @Test
@@ -52,6 +54,8 @@ class FeatureTogglePropertiesTest {
                 Map.entry("fluxgate.cache.ttl", "1m"),
                 Map.entry("fluxgate.cache.max-size", "42"),
                 Map.entry("fluxgate.metrics.enabled", "false"),
+                Map.entry("fluxgate.circuit-breaker.failure-threshold", "0"),
+                Map.entry("fluxgate.circuit-breaker.open-duration", "1m"),
                 Map.entry("fluxgate.health.enabled", "false"),
                 Map.entry("fluxgate.polling.interval", "0"),
                 Map.entry("fluxgate.openfeature.provider-name", "edge"),
@@ -72,6 +76,8 @@ class FeatureTogglePropertiesTest {
         assertThat(properties.getCache().getMaxSize()).isEqualTo(42);
         assertThat(properties.getMetrics().isEnabled()).isFalse();
         assertThat(properties.getHealth().isEnabled()).isFalse();
+        assertThat(properties.getCircuitBreaker().getFailureThreshold()).isZero();
+        assertThat(properties.getCircuitBreaker().getOpenDuration()).isEqualTo(Duration.ofMinutes(1));
         assertThat(properties.getPolling().getInterval()).isZero();
         assertThat(properties.getOpenfeature().getProviderName()).isEqualTo("edge");
         assertThat(properties.getOpenfeature().isAutoRegister()).isTrue();
@@ -87,7 +93,7 @@ class FeatureTogglePropertiesTest {
         assertThat(properties.toString())
                 .contains("[REDACTED]", "maxAttempts=3", "ttl=PT30S", "polling={interval=PT30S}",
                         "openfeature={autoRegister=false, providerName=null}", "health={enabled=true}",
-                        "metrics={enabled=true}")
+                        "metrics={enabled=true}", "circuitBreaker={failureThreshold=5, openDuration=PT30S}")
                 .doesNotContain("super-secret");
     }
 
@@ -139,6 +145,35 @@ class FeatureTogglePropertiesTest {
             assertThat(errors.getFieldErrors()).isEmpty();
             assertThat(errors.getGlobalError().getDefaultMessage())
                     .isEqualTo("fluxgate.sdk-key must have the form <clientId>.<apiKey>");
+        }
+
+        @Test
+        void rejectsNegativeThresholdAndNonPositiveOpenDuration() {
+            FeatureToggleProperties properties = new FeatureToggleProperties();
+            properties.setBaseUrl("https://edge.example.com");
+            properties.setSdkKey("c.k");
+            properties.getCircuitBreaker().setFailureThreshold(-1);
+            Errors errors = new BeanPropertyBindingResult(properties, "fluxgate");
+            properties.validate(properties, errors);
+            assertThat(errors.getFieldError("circuitBreaker.failureThreshold").getDefaultMessage())
+                    .contains("failure-threshold");
+
+            properties.getCircuitBreaker().setFailureThreshold(3);
+            properties.getCircuitBreaker().setOpenDuration(Duration.ZERO);
+            errors = new BeanPropertyBindingResult(properties, "fluxgate");
+            properties.validate(properties, errors);
+            assertThat(errors.getFieldError("circuitBreaker.openDuration").getDefaultMessage())
+                    .contains("open-duration must be positive");
+
+            properties.getCircuitBreaker().setOpenDuration(null);
+            errors = new BeanPropertyBindingResult(properties, "fluxgate");
+            properties.validate(properties, errors);
+            assertThat(errors.hasFieldErrors("circuitBreaker.openDuration")).isTrue();
+
+            properties.getCircuitBreaker().setFailureThreshold(0);
+            errors = new BeanPropertyBindingResult(properties, "fluxgate");
+            properties.validate(properties, errors);
+            assertThat(errors.hasErrors()).isFalse();
         }
 
         @Test

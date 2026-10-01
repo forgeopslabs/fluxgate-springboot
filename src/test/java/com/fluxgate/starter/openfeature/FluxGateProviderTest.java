@@ -7,6 +7,7 @@ import com.fluxgate.starter.FlagEvaluation;
 import com.fluxgate.starter.FluxGateClient;
 import dev.openfeature.sdk.ErrorCode;
 import dev.openfeature.sdk.ImmutableContext;
+import dev.openfeature.sdk.ImmutableMetadata;
 import dev.openfeature.sdk.ImmutableStructure;
 import dev.openfeature.sdk.ProviderEvaluation;
 import dev.openfeature.sdk.Structure;
@@ -24,8 +25,10 @@ import org.junit.jupiter.params.provider.CsvSource;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
+import java.math.BigInteger;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ScheduledExecutorService;
@@ -103,6 +106,35 @@ class FluxGateProviderTest {
             assertThat(result.getVariant()).isEqualTo("on");
             assertThat(result.getReason()).isEqualTo("TARGETING_MATCH");
             assertThat(result.getErrorCode()).isNull();
+            assertThat(result.getFlagMetadata().isEmpty()).isTrue();
+        }
+
+        @Test
+        void primitiveMetadataBecomesFlagMetadata() {
+            Map<String, Object> metadata = new LinkedHashMap<>();
+            metadata.put("experiment", "banner-2026");
+            metadata.put("sticky", true);
+            metadata.put("cohort", 7);
+            metadata.put("since", 1_790_000_000_000L);
+            metadata.put("weight", 0.25);
+            metadata.put("huge", new BigInteger("123456789012345678901234567890"));
+            metadata.put("nested", Map.of("a", 1));
+            metadata.put("list", List.of(1));
+            metadata.put("none", null);
+            when(client.evaluate(eq("f"), eq(false), eq(Boolean.class), any()))
+                    .thenReturn(new FlagEvaluation<>("f", true, "on", "STATIC", null, null, metadata));
+
+            ImmutableMetadata flagMetadata = provider.getBooleanEvaluation("f", false, null)
+                    .getFlagMetadata();
+
+            assertThat(flagMetadata.getString("experiment")).isEqualTo("banner-2026");
+            assertThat(flagMetadata.getBoolean("sticky")).isTrue();
+            assertThat(flagMetadata.getInteger("cohort")).isEqualTo(7);
+            assertThat(flagMetadata.getLong("since")).isEqualTo(1_790_000_000_000L);
+            assertThat(flagMetadata.getDouble("weight")).isEqualTo(0.25);
+            assertThat(flagMetadata.getDouble("huge")).isEqualTo(1.2345678901234568E29);
+            assertThat(flagMetadata.asUnmodifiableMap()).containsOnlyKeys("experiment", "sticky", "cohort", "since",
+                    "weight", "huge");
         }
 
         @Test

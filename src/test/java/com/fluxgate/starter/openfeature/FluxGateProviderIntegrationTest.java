@@ -132,6 +132,7 @@ class FluxGateProviderIntegrationTest {
         assertThat(details.getValue()).isEqualTo("blue");
         assertThat(details.getVariant()).isEqualTo("blue");
         assertThat(details.getReason()).isEqualTo("SPLIT");
+        assertThat(details.getFlagMetadata().getString("experiment")).isEqualTo("banner-2026");
     }
 
     @Test

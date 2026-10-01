@@ -183,7 +183,7 @@ public class FluxGateProvider extends EventProvider {
                 ? defaultValue
                 : ValueMapper.toValue(json);
         return toProviderEvaluation(new FlagEvaluation<>(evaluation.key(), value, evaluation.variant(),
-                evaluation.reason(), evaluation.errorCode(), evaluation.errorMessage()));
+                evaluation.reason(), evaluation.errorCode(), evaluation.errorMessage(), evaluation.metadata()));
     }
 
     private static boolean isOffMarker(JsonNode json, String variant) {
@@ -194,7 +194,8 @@ public class FluxGateProvider extends EventProvider {
         var builder = ProviderEvaluation.<T>builder()
                 .value(evaluation.value())
                 .variant(evaluation.variant())
-                .reason(evaluation.reason());
+                .reason(evaluation.reason())
+                .flagMetadata(MetadataMapper.toMetadata(evaluation.metadata()));
         if (evaluation.isError()) {
             builder.errorCode(OpenFeatureErrors.toErrorCode(evaluation.errorCode()))
                     .errorMessage(evaluation.errorMessage());

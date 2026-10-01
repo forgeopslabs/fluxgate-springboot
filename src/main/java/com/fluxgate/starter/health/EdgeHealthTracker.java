@@ -15,10 +15,12 @@ import java.time.Instant;
  * <p>
  * An outcome is a failure when the edge could not be used: {@code UNAUTHORIZED}
  * (401/403), {@code PROVIDER_NOT_READY} (503) or {@code GENERAL} (transport
- * errors, other 5xx, malformed responses). Answers about the request itself
- * ({@code FLAG_NOT_FOUND}, {@code TYPE_MISMATCH}, {@code TARGETING_KEY_MISSING})
- * prove the edge is serving and count as successes. Cache hits and
- * {@code INVALID_CONTEXT} (rejected before any request) are ignored.
+ * errors, other 5xx, malformed responses, and calls skipped by the open circuit
+ * breaker, reported as {@code PROVIDER_NOT_READY}). Answers about the request
+ * itself ({@code FLAG_NOT_FOUND}, {@code TYPE_MISMATCH}) prove the edge is
+ * serving and count as successes. Cache hits, {@code INVALID_CONTEXT} and
+ * {@code TARGETING_KEY_MISSING} (both rejected locally, before any request) are
+ * ignored.
  */
 public class EdgeHealthTracker implements FluxGateClientListener {
 
@@ -92,7 +94,7 @@ public class EdgeHealthTracker implements FluxGateClientListener {
     }
 
     private void record(String source, ErrorCode errorCode, String errorMessage) {
-        if (errorCode == ErrorCode.INVALID_CONTEXT) {
+        if (errorCode == ErrorCode.INVALID_CONTEXT || errorCode == ErrorCode.TARGETING_KEY_MISSING) {
             return;
         }
         boolean failure = isEdgeFailure(errorCode);

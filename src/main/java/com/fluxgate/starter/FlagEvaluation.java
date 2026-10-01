@@ -1,5 +1,9 @@
 package com.fluxgate.starter;
 
+import java.util.Collections;
+import java.util.LinkedHashMap;
+import java.util.Map;
+
 /**
  * Result of evaluating one flag.
  *
@@ -15,6 +19,8 @@ package com.fluxgate.starter;
  *                     {@code UNKNOWN}) or {@value #ERROR_REASON}
  * @param errorCode    why the default was returned, or {@code null} on success
  * @param errorMessage human-readable error detail, or {@code null} on success
+ * @param metadata     the flag's OFREP {@code metadata} object; immutable,
+ *                     empty when the edge sent none and on errors
  * @param <T>          the value type
  */
 public record FlagEvaluation<T>(
@@ -23,7 +29,32 @@ public record FlagEvaluation<T>(
         String variant,
         String reason,
         ErrorCode errorCode,
-        String errorMessage) {
+        String errorMessage,
+        Map<String, Object> metadata) {
+
+    /**
+     * Copies {@code metadata} into an immutable map ({@code null} becomes
+     * empty).
+     */
+    public FlagEvaluation {
+        metadata = metadata == null || metadata.isEmpty() ? Map.of()
+                : Collections.unmodifiableMap(new LinkedHashMap<>(metadata));
+    }
+
+    /**
+     * Creates an evaluation without metadata.
+     *
+     * @param key          the flag key
+     * @param value        the resolved value, or the default on error
+     * @param variant      the variant, or {@code null}
+     * @param reason       the reason
+     * @param errorCode    the error code, or {@code null}
+     * @param errorMessage the error detail, or {@code null}
+     */
+    public FlagEvaluation(String key, T value, String variant, String reason, ErrorCode errorCode,
+            String errorMessage) {
+        this(key, value, variant, reason, errorCode, errorMessage, Map.of());
+    }
 
     /** Reason reported for every failed evaluation. */
     public static final String ERROR_REASON = "ERROR";

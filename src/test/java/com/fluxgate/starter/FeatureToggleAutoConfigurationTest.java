@@ -91,11 +91,22 @@ class FeatureToggleAutoConfigurationTest {
     }
 
     @Test
-    void disabledStarterNeedsNoProperties() {
+    void disabledStarterRegistersTheNoOpClientAndNeedsNoProperties() {
         new ApplicationContextRunner()
-                .withConfiguration(AutoConfigurations.of(FeatureToggleAutoConfiguration.class))
+                .withConfiguration(AutoConfigurations.of(FeatureToggleAutoConfiguration.class,
+                        DisabledFluxGateAutoConfiguration.class))
                 .withPropertyValues("fluxgate.enabled=false")
-                .run(context -> assertThat(context).hasNotFailed().doesNotHaveBean(FluxGateClient.class));
+                .run(context -> {
+                    assertThat(context).hasNotFailed().doesNotHaveBean(OfrepTransport.class);
+                    assertThat(context.getBean(FluxGateClient.class)).isInstanceOf(DisabledFluxGateClient.class);
+                });
+    }
+
+    @Test
+    void noOpClientIsNotRegisteredWhileEnabled() {
+        contextRunner.withConfiguration(AutoConfigurations.of(DisabledFluxGateAutoConfiguration.class))
+                .run(context -> assertThat(context.getBean(FluxGateClient.class))
+                        .isInstanceOf(DefaultFluxGateClient.class));
     }
 
     @Test

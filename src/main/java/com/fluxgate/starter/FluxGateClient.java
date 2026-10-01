@@ -14,9 +14,10 @@ import java.util.concurrent.ForkJoinPool;
  *
  * <p>
  * The edge requires a targeting key. The shortcuts without a context
- * ({@code isEnabled(key)}, {@code getString(key, default)}, ...) send none, so
- * against a real edge they always return the default with
- * {@link ErrorCode#TARGETING_KEY_MISSING}. Pass an {@link EvaluationContext}.
+ * ({@code isEnabled(key)}, {@code getString(key, default)}, ...) have none, so
+ * {@link DefaultFluxGateClient} returns the default with
+ * {@link ErrorCode#TARGETING_KEY_MISSING} without calling the edge. Pass an
+ * {@link EvaluationContext}.
  *
  * <pre>{@code
  * EvaluationContext ctx = EvaluationContext.of("user-42");

@@ -1,5 +1,7 @@
 package com.fluxgate.starter.aop;
 
+import com.fluxgate.starter.DisabledFluxGateAutoConfiguration;
+import com.fluxgate.starter.DisabledFluxGateClient;
 import com.fluxgate.starter.EvaluationContext;
 import com.fluxgate.starter.FeatureToggleAutoConfiguration;
 import com.fluxgate.starter.FluxGateClient;
@@ -99,14 +101,38 @@ class FeatureToggleAspectAutoConfigurationTest {
     }
 
     @Test
-    void backsOffWithoutAspectJ() {
+    void withoutAspectJRegistersOnlyTheInactiveWarner() {
         contextRunner.withClassLoader(new FilteredClassLoader("org.aspectj"))
-                .run(context -> assertThat(context).hasNotFailed().doesNotHaveBean(FeatureToggleAspect.class));
+                .run(context -> assertThat(context).hasNotFailed()
+                        .doesNotHaveBean(FeatureToggleAspect.class)
+                        .hasSingleBean(InactiveFeatureToggleWarner.class));
     }
 
     @Test
-    void backsOffWhenDisabled() {
-        contextRunner.withPropertyValues("fluxgate.enabled=false")
-                .run(context -> assertThat(context).doesNotHaveBean(FeatureToggleAspect.class));
+    void autoProxyOffRegistersOnlyTheInactiveWarner() {
+        contextRunner.withPropertyValues("spring.aop.auto=false")
+                .run(context -> assertThat(context).hasNotFailed()
+                        .doesNotHaveBean(FeatureToggleAspect.class)
+                        .hasSingleBean(InactiveFeatureToggleWarner.class));
+    }
+
+    @Test
+    void activeAspectNeedsNoWarner() {
+        contextRunner.run(context -> assertThat(context).doesNotHaveBean(InactiveFeatureToggleWarner.class));
+    }
+
+    @Test
+    void disabledStarterKeepsTheAspectWithEveryFlagOff() {
+        new ApplicationContextRunner()
+                .withConfiguration(AutoConfigurations.of(AopAutoConfiguration.class,
+                        FeatureToggleAutoConfiguration.class, DisabledFluxGateAutoConfiguration.class,
+                        FeatureToggleAspectAutoConfiguration.class))
+                .withPropertyValues("fluxgate.enabled=false")
+                .withBean(Greeter.class)
+                .run(context -> {
+                    assertThat(context).hasSingleBean(FeatureToggleAspect.class);
+                    assertThat(context.getBean(FluxGateClient.class)).isInstanceOf(DisabledFluxGateClient.class);
+                    assertThat(context.getBean(Greeter.class).hello("Ada")).isEqualTo("Hello Ada");
+                });
     }
 }

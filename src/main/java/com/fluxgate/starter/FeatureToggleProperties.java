@@ -21,6 +21,9 @@ import java.time.Duration;
  *   retry:
  *     max-attempts: 3
  *     initial-backoff: 100ms
+ *   circuit-breaker:
+ *     failure-threshold: 5
+ *     open-duration: 30s
  *   cache:
  *     enabled: true
  *     ttl: 30s
@@ -73,6 +76,8 @@ public class FeatureToggleProperties implements Validator {
     private Duration readTimeout = Duration.ofSeconds(5);
 
     private final Retry retry = new Retry();
+
+    private final CircuitBreaker circuitBreaker = new CircuitBreaker();
 
     private final Cache cache = new Cache();
 
@@ -132,6 +137,10 @@ public class FeatureToggleProperties implements Validator {
         return cache;
     }
 
+    public CircuitBreaker getCircuitBreaker() {
+        return circuitBreaker;
+    }
+
     public Polling getPolling() {
         return polling;
     }
@@ -172,6 +181,15 @@ public class FeatureToggleProperties implements Validator {
             errors.rejectValue("baseUrl", "fluxgate.base-url.invalid",
                     "fluxgate.base-url must be an http:// or https:// URL");
         }
+        CircuitBreaker breaker = properties.getCircuitBreaker();
+        if (breaker.getFailureThreshold() < 0) {
+            errors.rejectValue("circuitBreaker.failureThreshold", "fluxgate.circuit-breaker.failure-threshold.invalid",
+                    "fluxgate.circuit-breaker.failure-threshold must be 0 (disabled) or positive");
+        } else if (breaker.getFailureThreshold() > 0
+                && (breaker.getOpenDuration() == null || breaker.getOpenDuration().compareTo(Duration.ZERO) <= 0)) {
+            errors.rejectValue("circuitBreaker.openDuration", "fluxgate.circuit-breaker.open-duration.invalid",
+                    "fluxgate.circuit-breaker.open-duration must be positive");
+        }
         String key = properties.getSdkKey();
         if (!StringUtils.hasText(key)) {
             errors.rejectValue("sdkKey", "fluxgate.sdk-key.missing",
@@ -198,6 +216,7 @@ public class FeatureToggleProperties implements Validator {
                 ", connectTimeout=" + connectTimeout +
                 ", readTimeout=" + readTimeout +
                 ", retry=" + retry +
+                ", circuitBreaker=" + circuitBreaker +
                 ", cache=" + cache +
                 ", polling=" + polling +
                 ", openfeature=" + openfeature +
@@ -241,6 +260,46 @@ public class FeatureToggleProperties implements Validator {
         @Override
         public String toString() {
             return "{maxAttempts=" + maxAttempts + ", initialBackoff=" + initialBackoff + '}';
+        }
+    }
+
+    /**
+     * Circuit breaker for edge calls, shared by single-flag and bulk
+     * evaluations.
+     */
+    public static class CircuitBreaker {
+
+        /**
+         * Consecutive transport failures (I/O errors, timeouts, HTTP 5xx) after
+         * which edge calls are skipped and evaluations return the default with
+         * PROVIDER_NOT_READY. 4xx answers never count. 0 disables the breaker.
+         */
+        private int failureThreshold = 5;
+
+        /**
+         * How long the breaker stays open before one trial call is allowed.
+         */
+        private Duration openDuration = Duration.ofSeconds(30);
+
+        public int getFailureThreshold() {
+            return failureThreshold;
+        }
+
+        public void setFailureThreshold(int failureThreshold) {
+            this.failureThreshold = failureThreshold;
+        }
+
+        public Duration getOpenDuration() {
+            return openDuration;
+        }
+
+        public void setOpenDuration(Duration openDuration) {
+            this.openDuration = openDuration;
+        }
+
+        @Override
+        public String toString() {
+            return "{failureThreshold=" + failureThreshold + ", openDuration=" + openDuration + '}';
         }
     }
 

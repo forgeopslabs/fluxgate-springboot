@@ -36,12 +36,14 @@ final class FlagValueConverter {
         }
         if (result.value() == null) {
             // The edge resolved to the code default.
-            return new FlagEvaluation<>(result.key(), defaultValue, result.variant(), result.reason(), null, null);
+            return new FlagEvaluation<>(result.key(), defaultValue, result.variant(), result.reason(), null, null,
+                    result.metadata());
         }
         Object converted = convert(result.value(), ClassUtils.resolvePrimitiveIfNecessary(type));
         if (converted == null && isOffMarker(result)) {
             // Disabled or unassigned: the edge sends `false` with no variant whatever the flag's type.
-            return new FlagEvaluation<>(result.key(), defaultValue, null, result.reason(), null, null);
+            return new FlagEvaluation<>(result.key(), defaultValue, null, result.reason(), null, null,
+                    result.metadata());
         }
         if (converted == null) {
             return FlagEvaluation.error(result.key(), defaultValue, ErrorCode.TYPE_MISMATCH,
@@ -50,7 +52,8 @@ final class FlagValueConverter {
         }
         @SuppressWarnings("unchecked") // convert() returns an instance of the (wrapped) requested type
         T value = (T) converted;
-        return new FlagEvaluation<>(result.key(), value, result.variant(), result.reason(), null, null);
+        return new FlagEvaluation<>(result.key(), value, result.variant(), result.reason(), null, null,
+                result.metadata());
     }
 
     /**
