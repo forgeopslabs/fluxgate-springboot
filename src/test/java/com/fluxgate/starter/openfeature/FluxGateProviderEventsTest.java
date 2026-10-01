@@ -32,6 +32,7 @@ import static org.awaitility.Awaitility.await;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -114,11 +115,13 @@ class FluxGateProviderEventsTest {
         assertThat(client.getProviderState()).isEqualTo(ProviderState.ERROR);
         await().until(() -> errors.size() == 1);
         assertThat(errors.get(0).getMessage()).contains("Client credentials are missing or invalid");
+        assertThat(errors.get(0).getErrorCode()).isEqualTo(dev.openfeature.sdk.ErrorCode.GENERAL);
         assertThat(ready).isEmpty();
 
         pollTask().run();
 
-        assertThat(client.getProviderState()).isEqualTo(ProviderState.READY);
+        // SDK 1.23 emits events, and applies their state change, asynchronously.
+        await().until(() -> client.getProviderState() == ProviderState.READY);
         await().until(() -> ready.size() == 1);
         assertThat(changes).isEmpty();
     }
@@ -142,6 +145,26 @@ class FluxGateProviderEventsTest {
     }
 
     @Test
+    void changedFlagsClearTheCacheEvenWhenTheProviderLeavesReadyMeanwhile() {
+        edgeUp();
+        api.setProviderAndWait(DOMAIN, provider);
+        await().until(() -> ready.size() == 1);
+        Runnable poll = pollTask();
+        when(fluxGate.evaluate(eq("f"), eq(false), eq(Boolean.class), any()))
+                .thenReturn(FlagEvaluation.error("f", false, ErrorCode.UNAUTHORIZED, "Client is not permitted"));
+        // An evaluation rejected with 401 lands between the poll's status checks.
+        doAnswer(invocation -> provider.getBooleanEvaluation("f", false, new ImmutableContext("user-1")))
+                .when(fluxGate).invalidateCache();
+
+        when(fluxGate.bulkEvaluate(any())).thenReturn(V2);
+        poll.run();
+
+        verify(fluxGate).invalidateCache();
+        await().until(() -> errors.size() == 1);
+        await().during(Duration.ofMillis(200)).until(changes::isEmpty);
+    }
+
+    @Test
     void failedPollEmitsErrorOnceAndRecoveryEmitsReadyAndChanges() {
         edgeUp();
         api.setProviderAndWait(DOMAIN, provider);
@@ -152,15 +175,17 @@ class FluxGateProviderEventsTest {
         poll.run();
         poll.run();
 
-        assertThat(client.getProviderState()).isEqualTo(ProviderState.ERROR);
+        // SDK 1.23 emits events, and applies their state change, asynchronously.
+        await().until(() -> client.getProviderState() == ProviderState.ERROR);
         await().until(() -> errors.size() == 1);
-        // SDK 1.14 does not copy the provider's errorCode into handler EventDetails; the message is kept.
         assertThat(errors.get(0).getMessage()).isEqualTo("503");
+        assertThat(errors.get(0).getErrorCode()).isEqualTo(dev.openfeature.sdk.ErrorCode.PROVIDER_NOT_READY);
 
         when(fluxGate.bulkEvaluate(any())).thenReturn(V2);
         poll.run();
 
-        assertThat(client.getProviderState()).isEqualTo(ProviderState.READY);
+        // SDK 1.23 emits events, and applies their state change, asynchronously.
+        await().until(() -> client.getProviderState() == ProviderState.READY);
         await().until(() -> ready.size() == 2 && changes.size() == 1);
         assertThat(errors).hasSize(1);
     }
@@ -175,9 +200,11 @@ class FluxGateProviderEventsTest {
         boolean value = client.getBooleanValue("f", false, new ImmutableContext("user-1"));
 
         assertThat(value).isFalse();
-        assertThat(client.getProviderState()).isEqualTo(ProviderState.ERROR);
+        // SDK 1.23 emits events, and applies their state change, asynchronously.
+        await().until(() -> client.getProviderState() == ProviderState.ERROR);
         await().until(() -> errors.size() == 1);
         assertThat(errors.get(0).getMessage()).isEqualTo("Client is not permitted");
+        assertThat(errors.get(0).getErrorCode()).isEqualTo(dev.openfeature.sdk.ErrorCode.GENERAL);
     }
 
     @Test

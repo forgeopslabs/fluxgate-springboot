@@ -38,6 +38,13 @@ public final class EvaluationCache {
     }
 
     /**
+     * @return {@code true} unless {@code fluxgate.cache.enabled=false}
+     */
+    public boolean isEnabled() {
+        return cache != null;
+    }
+
+    /**
      * @return the cached result, or {@code null}
      */
     public OfrepFlagResult get(String flagKey, EvaluationContext context) {

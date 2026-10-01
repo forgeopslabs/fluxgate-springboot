@@ -1,23 +1,17 @@
 # FluxGate Spring Boot Starter
 
-A Spring Boot starter for integrating with the FluxGate Feature Toggle Edge Server. This starter provides easy integration with FluxGate's feature flag system, allowing you to evaluate feature flags in your Spring Boot applications.
+A Spring Boot starter for the FluxGate feature toggle edge server. It talks to the edge over
+[OFREP](https://openfeature.dev/specification/appendix-c) (the OpenFeature Remote Evaluation
+Protocol) and provides:
 
-## Features
+- a typed `FluxGateClient` with a short-lived evaluation cache and retries,
+- an OpenFeature provider (`FluxGateProvider`) with change polling and provider events,
+- a `@FeatureToggle` method annotation,
+- Micrometer metrics and an Actuator health indicator.
 
-- 🚀 **Easy Integration**: Auto-configuration with Spring Boot
-- 🔄 **Retry Logic**: Built-in retry with exponential backoff
-- 📊 **Metrics**: Optional Micrometer metrics integration
-- 🏥 **Health Checks**: Spring Boot Actuator health indicator
-- ⚡ **Async Support**: Asynchronous feature flag evaluation
-- 🛡️ **Fallback Support**: Graceful degradation when edge server is unavailable
-- 🎯 **Context Support**: User attributes and contextual evaluations
-- 🔓 **OpenFeature Compatible**: Use via standard OpenFeature Java SDK
+Requirements: Java 17+, Spring Boot 3.5.
 
-## Quick Start
-
-### 1. Add Dependency
-
-Add the starter to your `pom.xml`:
+## Installation
 
 ```xml
 <dependency>
@@ -27,534 +21,297 @@ Add the starter to your `pom.xml`:
 </dependency>
 ```
 
-### 2. Configuration
+Each optional feature turns on when its dependency is on your classpath:
 
-Configure the edge server connection in your `application.yml`:
+| Feature | Add |
+|---|---|
+| OpenFeature provider | `dev.openfeature:sdk` (tested with 1.23.0) |
+| `@FeatureToggle` annotation | `org.springframework.boot:spring-boot-starter-aop` |
+| Metrics | `io.micrometer:micrometer-core` and a `MeterRegistry`, for example through `spring-boot-starter-actuator` |
+| Health indicator | `org.springframework.boot:spring-boot-starter-actuator` |
+
+## Configuration
 
 ```yaml
 fluxgate:
-  base-url: http://localhost:8081
-  client-id: your-client-id
-  client-secret: your-client-secret
-  connection-timeout: PT5S
-  read-timeout: PT5S
-  retry-attempts: 3
-  retry-delay: PT1S
-  fallback-enabled: true
+  base-url: https://edge.example.com
+  sdk-key: ${FLUXGATE_SDK_KEY}   # <clientId>.<apiKey>
 ```
 
-### 3. Basic Usage
+When the starter is enabled, `base-url` and `sdk-key` are required. If either is missing or
+malformed, startup fails with a message that names the property. The message never includes the
+key itself.
 
-Inject and use the `FluxGateClient`:
+| Property | Default | Description |
+|---|---|---|
+| `fluxgate.enabled` | `true` | Turns the whole starter on or off. When `false`, no beans are created and no properties are required. |
+| `fluxgate.base-url` | (required) | Edge server URL, `http://` or `https://`. |
+| `fluxgate.sdk-key` | (required) | SDK key, `<clientId>.<apiKey>`. Sent as `Authorization: Bearer <sdkKey>`. |
+| `fluxgate.connect-timeout` | `5s` | Connect timeout. |
+| `fluxgate.read-timeout` | `5s` | Read timeout. |
+| `fluxgate.retry.max-attempts` | `3` | Attempts per call, counting the first. Only I/O errors and HTTP 502, 503 and 504 are retried. |
+| `fluxgate.retry.initial-backoff` | `100ms` | Wait before the first retry. It doubles after each retry. |
+| `fluxgate.cache.enabled` | `true` | Caches successful evaluations by flag key and context. |
+| `fluxgate.cache.ttl` | `30s` | How long a cached evaluation lives after it is written. |
+| `fluxgate.cache.max-size` | `1000` | Maximum number of cached evaluations. |
+| `fluxgate.polling.interval` | `30s` | How often the OpenFeature provider checks the flag set for changes. `0` turns polling off. The health indicator also uses this as its minimum `/health` probe age (30s when `0`). |
+| `fluxgate.openfeature.auto-register` | `false` | Registers the provider with `OpenFeatureAPI` at startup. |
+| `fluxgate.openfeature.provider-name` | (unset) | OpenFeature domain to register under. Unset means the default provider. |
+| `fluxgate.health.enabled` | `true` | Adds the `fluxgate` health indicator. |
+| `fluxgate.metrics.enabled` | `true` | Records Micrometer metrics. |
 
-```java
-@RestController
-public class MyController {
+The jar includes Spring Boot configuration metadata, so IDEs can complete and document these
+properties.
 
-    private final FluxGateClient fluxGateClient;
+### SDK key and edge compatibility
 
-    public MyController(FluxGateClient fluxGateClient) {
-        this.fluxGateClient = fluxGateClient;
-    }
+- The SDK key has the form `<clientId>.<apiKey>`: the FluxGate client's ID and its API key,
+  joined by a dot.
+- The edge picks the environment from the client. Callers never send one. **Do not set an
+  `environment_id` context attribute.** The edge returns 401 if it does not match the client's
+  environment.
+- The edge must be a version with SDK-key OFREP authentication, meaning it accepts
+  `Authorization: Bearer <clientId>.<apiKey>` on `/ofrep/v1/evaluate/flags`. Older edges treat
+  the bearer token as a bare client ID, so they reject these requests.
 
-    @GetMapping("/api/data")
-    public ResponseEntity<String> getData() {
-        boolean newFeatureEnabled = fluxGateClient.isEnabled("new-feature", "prod");
-        
-        if (newFeatureEnabled) {
-            return ResponseEntity.ok("New feature is enabled!");
-        } else {
-            return ResponseEntity.ok("Using legacy implementation");
-        }
-    }
-}
-```
+## Typed client
 
-## Configuration Properties
-
-| Property | Description | Default | Type |
-|----------|-------------|---------|------|
-| `fluxgate.base-url` | Base URL of the FluxGate Edge Server | `http://localhost:8081` | String |
-| `fluxgate.client-id` | Client ID for authentication | - | String |
-| `fluxgate.client-secret` | Client secret for authentication | - | String |
-| `fluxgate.connection-timeout` | Connection timeout | `PT5S` | Duration |
-| `fluxgate.read-timeout` | Read timeout | `PT5S` | Duration |
-| `fluxgate.retry-attempts` | Number of retry attempts | `3` | Integer |
-| `fluxgate.retry-delay` | Initial retry delay | `PT1S` | Duration |
-| `fluxgate.max-retry-delay` | Maximum retry delay | `PT10S` | Duration |
-| `fluxgate.retry-multiplier` | Retry delay multiplier | `2.0` | Double |
-| `fluxgate.fallback-enabled` | Enable fallback behavior | `true` | Boolean |
-| `fluxgate.default-fallback-value` | Default fallback value | `false` | Boolean |
-| `fluxgate.metrics-enabled` | Enable Micrometer metrics | `true` | Boolean |
-| `fluxgate.health-check-enabled` | Enable health indicator | `true` | Boolean |
-| `fluxgate.health-check-interval` | Interval for health check pings | `PT30S` | Duration |
-| `fluxgate.caching-enabled` | Enable caching of evaluation results | `false` | Boolean |
-| `fluxgate.cache-entry-ttl` | TTL for cached entries | `PT5M` | Duration |
-| `fluxgate.cache-max-size` | Maximum cache size | `1000` | Integer |
-| `fluxgate.openfeature-default-environment` | Default environment for OpenFeature evaluations | `default` | String |
-| `fluxgate.openfeature-environment-context-key` | Context key for environment ID | `environment` | String |
-| `fluxgate.openfeature-provider-name` | Provider name for registration | `fluxgate` | String |
-| `fluxgate.openfeature-auto-register` | Auto-register with OpenFeatureAPI | `false` | Boolean |
-
-## OpenFeature SDK Integration
-
-This starter is fully compatible with the [OpenFeature Java SDK](https://openfeature.dev/docs/reference/sdks/server/java/), allowing you to use the standard OpenFeature API for feature flag evaluation.
-
-### Installation
-
-Add both dependencies to your `pom.xml`:
-
-```xml
-<dependency>
-    <groupId>io.github.keaz</groupId>
-    <artifactId>fluxgate-spring-boot-starter</artifactId>
-    <version>1.0.0-SNAPSHOT</version>
-</dependency>
-<dependency>
-    <groupId>dev.openfeature</groupId>
-    <artifactId>sdk</artifactId>
-    <version>1.14.0</version>
-</dependency>
-```
-
-### Basic Usage
-
-When both dependencies are on the classpath, `FluxGateProvider` is automatically available as a Spring bean:
-
-```java
-import com.fluxgate.starter.openfeature.FluxGateProvider;
-import dev.openfeature.sdk.Client;
-import dev.openfeature.sdk.OpenFeatureAPI;
-import org.springframework.stereotype.Service;
-
-@Service
-public class FeatureService {
-
-    private final Client openFeatureClient;
-
-    public FeatureService(FluxGateProvider fluxGateProvider) throws Exception {
-        // Register the provider with OpenFeature
-        OpenFeatureAPI api = OpenFeatureAPI.getInstance();
-        api.setProviderAndWait(fluxGateProvider);
-        this.openFeatureClient = api.getClient();
-    }
-
-    public void doSomething() {
-        // Use standard OpenFeature API
-        boolean enabled = openFeatureClient.getBooleanValue("my-feature", false);
-        
-        if (enabled) {
-            // Feature is enabled
-        }
-    }
-}
-```
-
-### Using Evaluation Context
-
-Pass context attributes for targeted evaluations:
-
-```java
-import dev.openfeature.sdk.EvaluationContext;
-import dev.openfeature.sdk.ImmutableContext;
-import dev.openfeature.sdk.Value;
-
-// Create context with user attributes
-Map<String, Value> attributes = new HashMap<>();
-attributes.put("userId", new Value("user-123"));
-attributes.put("tier", new Value("premium"));
-attributes.put("environment", new Value("production")); // Sets environment ID
-
-EvaluationContext ctx = new ImmutableContext("user-123", attributes);
-
-// Evaluate with context
-boolean result = openFeatureClient.getBooleanValue("premium-feature", false, ctx);
-```
-
-### Environment Handling
-
-Since FluxGate requires an environment ID, the provider extracts it from the evaluation context:
-
-1. Checks for `environment` key in context (configurable via `fluxgate.openfeature-environment-context-key`)
-2. Falls back to `fluxgate.openfeature-default-environment` property
-3. Defaults to `"default"` if neither is set
-
-### Getting Flag Details
-
-Access detailed evaluation information:
-
-```java
-FlagEvaluationDetails<Boolean> details = openFeatureClient.getBooleanDetails("my-feature", false);
-
-boolean value = details.getValue();
-String reason = details.getReason();
-ErrorCode errorCode = details.getErrorCode(); // null if successful
-```
-
-### Non-Boolean Flag Types
-
-FluxGate returns boolean flag values. For other types, the boolean is converted:
-
-| Type | `true` becomes | `false` becomes |
-|------|----------------|-----------------|
-| String | `"true"` | `"false"` |
-| Integer | `1` | `0` |
-| Double | `1.0` | `0.0` |
-| Object (Value) | `Value(true)` | `Value(false)` |
-
-## API Reference
-
-### FluxGateClient Interface
-
-#### Basic Methods
-
-```java
-// Simple evaluation
-boolean isEnabled(String featureKey, String environmentId);
-
-// With context
-boolean isEnabled(String featureKey, String environmentId, Map<String, String> context);
-
-// With request object
-boolean isEnabled(FeatureEvaluationRequest request);
-```
-
-### Execution Methods
-
-```java
-fluxGateClient.execute(request, unused ->result.append("✅ Special action executed successfully!"));
-```
-
-### Execute and Return Result
-
-```java
-Double calculationResult = fluxGateClient.executeAndReturn(request, this::performComplexCalculation);
-```
-
-### Execute with Fallback
-
-```java
-List<String> recommendations = fluxGateClient.executeAndReturnWithFallback(
-                request,
-                this::generateAIRecommendations, // Only called if feature enabled
-                getDefaultRecommendations() // Fallback value
-        );
-```
-
-#### Async Methods
-
-```java
-// Async variants
-CompletableFuture<Boolean> isEnabledAsync(String featureKey, String environmentId);
-CompletableFuture<Boolean> isEnabledAsync(String featureKey, String environmentId, Map<String, String> context);
-CompletableFuture<Boolean> isEnabledAsync(FeatureEvaluationRequest request);
-```
-
-#### Fallback Methods
-
-```java
-// With fallback values (never throws exceptions)
-boolean isEnabledWithFallback(String featureKey, String environmentId, boolean fallback);
-boolean isEnabledWithFallback(String featureKey, String environmentId, Map<String, String> context, boolean fallback);
-boolean isEnabledWithFallback(FeatureEvaluationRequest request, boolean fallback);
-```
-
-## Usage Examples
-
-### Simple Feature Flag Check
+Inject `FluxGateClient`. Evaluation methods never throw. On any failure they return your default,
+and `evaluate` reports why.
 
 ```java
 @Service
-public class UserService {
+class CheckoutService {
 
-    private final FluxGateClient fluxGateClient;
+    private final FluxGateClient flags;
 
-    public UserService(FluxGateClient fluxGateClient) {
-        this.fluxGateClient = fluxGateClient;
+    CheckoutService(FluxGateClient flags) {
+        this.flags = flags;
     }
 
-    public User createUser(CreateUserRequest request) {
-        boolean emailVerificationEnabled = fluxGateClient.isEnabled("email-verification", "prod");
-        
-        User user = new User(request);
-        
-        if (emailVerificationEnabled) {
-            emailService.sendVerificationEmail(user);
+    Receipt checkout(User user, Cart cart) {
+        EvaluationContext ctx = EvaluationContext.builder()
+                .targetingKey(user.id())          // required by the edge
+                .attribute("country", user.country())
+                .attribute("beta", user.isBeta())
+                .build();
+
+        if (flags.isEnabled("new-checkout", ctx)) {
+            return newCheckout(cart);
         }
-        
-        return userRepository.save(user);
+        return legacyCheckout(cart);
     }
 }
 ```
 
-### Context-Based Evaluation
+| Method | Returns |
+|---|---|
+| `isEnabled(key, ctx)`, `getBoolean(key, default, ctx)` | `boolean` |
+| `getString`, `getInteger`, `getDouble`, `getObject` (a `Map`) | the typed value or your default |
+| `evaluate(key, default, Class<T>, ctx)` | `FlagEvaluation<T>`: `value`, `variant`, `reason`, `errorCode`, `errorMessage` |
+| `evaluateAsync(key, default, Class<T>, ctx)` | `CompletableFuture<FlagEvaluation<T>>`. The future always completes normally. |
+| `bulkEvaluate(ctx)` | every flag for the context, revalidated with `ETag` / `If-None-Match` |
+
+Rules for values:
+
+- **Types are exact.** An integer flag read with `getString` returns your default with
+  `TYPE_MISMATCH`. The value is never converted. Integers can be read as `Double`.
+- **Disabled flags return your default.** For a disabled or unassigned flag of any type, the edge
+  sends `false` with no variant. The client returns your default with the edge's reason
+  (`DISABLED` or `DEFAULT`), and no error.
+- **Evaluations without a context return the default.** `isEnabled(key)`,
+  `getString(key, default)` and the other context-free shortcuts send no targeting key. The edge
+  requires one, so these calls always return your default with `TARGETING_KEY_MISSING`. Always
+  pass a context that has a targeting key.
+
+`errorCode` is one of `FLAG_NOT_FOUND`, `TYPE_MISMATCH`, `TARGETING_KEY_MISSING`,
+`INVALID_CONTEXT`, `PROVIDER_NOT_READY` (edge returned 503), `UNAUTHORIZED` (edge returned 401 or
+403) and `GENERAL`.
+
+### Async evaluation
+
+`evaluateAsync` runs on the `Executor` bean named `fluxGateAsyncExecutor` if you define one.
+Otherwise it uses `ForkJoinPool.commonPool()`. If the executor rejects the task, the future
+completes with your default and a `GENERAL` error.
+
+```java
+@Bean(FeatureToggleAutoConfiguration.ASYNC_EXECUTOR_BEAN_NAME)   // "fluxGateAsyncExecutor"
+Executor fluxGateAsyncExecutor() {
+    return Executors.newVirtualThreadPerTaskExecutor();           // Java 21
+}
+```
+
+### Caching
+
+Successful single-flag evaluations are cached by `(flag key, context)` for `cache.ttl`. Errors are
+never cached. When the OpenFeature provider sees a new flag-set version, it clears the cache.
+Without polling, a flag change can take up to `cache.ttl` to show up.
+
+## OpenFeature
+
+Add `dev.openfeature:sdk`. The starter creates a `FluxGateProvider` bean.
+
+Register it yourself:
+
+```java
+@Bean
+ApplicationRunner registerFluxGate(FluxGateProvider provider) {
+    return args -> OpenFeatureAPI.getInstance().setProviderAndWait(provider); // fails startup if the edge is down
+}
+```
+
+Or let the starter register it without blocking startup:
+
+```yaml
+fluxgate:
+  openfeature:
+    auto-register: true
+    # provider-name: payments   # optional OpenFeature domain
+```
+
+Then evaluate through the OpenFeature API:
+
+```java
+Client client = OpenFeatureAPI.getInstance().getClient();
+EvaluationContext ctx = new ImmutableContext("user-42", Map.of("country", new Value("LK")));
+
+boolean enabled = client.getBooleanValue("new-checkout", false, ctx);
+FlagEvaluationDetails<String> banner = client.getStringDetails("banner-color", "grey", ctx);
+```
+
+### Behavior
+
+- **Values and errors.** Reason and variant pass through unchanged. Error codes map to
+  OpenFeature codes with the same names. `UNAUTHORIZED` maps to `GENERAL`, and the edge's message
+  is kept.
+- **Object flags.** These become `Value` structures. An integer that does not fit in an `int`
+  becomes a `Double`, because OpenFeature `Value` has no `long`. Beyond 2^53 this loses
+  precision. If you need exact large numbers, read them with the typed client
+  (`evaluate(key, 0L, Long.class, ctx)`).
+- **Initialization.** The provider calls `GET /health` and then runs one bulk evaluation. If
+  either fails, the provider goes to `ERROR` and emits `PROVIDER_ERROR`. Bulk evaluation needs a
+  targeting key, so the provider uses the targeting key of the OpenFeature global context, or
+  `fluxgate-openfeature-provider` when the global context has none.
+- **Polling.** Every `polling.interval` the provider re-runs the bulk evaluation with
+  `If-None-Match`. When the version changes, it clears the evaluation cache and emits
+  `PROVIDER_CONFIGURATION_CHANGED` with the changed flag keys.
+- **Errors.** A failed poll, or an evaluation the edge rejects with 401 or 403, moves the provider
+  from `READY` to `ERROR` and emits `PROVIDER_ERROR`.
+- **Recovery.** A provider in `ERROR` returns to `READY` and emits `PROVIDER_READY` after the next
+  successful bulk poll. `/health` must answer at initialization, but recovery needs only a
+  successful poll.
+- **With `polling.interval=0`, `ERROR` is permanent.** No poll runs, so the provider never
+  recovers on its own after a failed initialization or an evaluation rejected with 401 or 403.
+  Keep a non-zero interval unless you manage provider lifecycle yourself.
+
+## `@FeatureToggle`
+
+Requires `spring-boot-starter-aop`.
 
 ```java
 @Service
-public class RecommendationService {
+public class PricingService {
 
-    private final FluxGateClient fluxGateClient;
-
-    public List<Product> getRecommendations(User user) {
-        Map<String, String> context = Map.of(
-            "user.id", user.getId().toString(),
-            "user.tier", user.getTier().name(),
-            "user.country", user.getCountry()
-        );
-
-        boolean mlRecommendationsEnabled = fluxGateClient.isEnabled(
-            "ml-recommendations", "prod", context);
-
-        if (mlRecommendationsEnabled) {
-            return mlRecommendationEngine.getRecommendations(user);
-        } else {
-            return simpleRecommendationEngine.getRecommendations(user);
-        }
+    @FeatureToggle(value = "new-pricing", fallbackMethod = "legacyPrice")
+    public Money price(Cart cart) {
+        return newPricingEngine.price(cart);
     }
+
+    private Money legacyPrice(Cart cart) {    // same parameters, compatible return type
+        return legacyEngine.price(cart);
+    }
+
+    @FeatureToggle("audit-log")
+    public void audit(Order order) { ... }    // skipped while the flag is off
 }
 ```
 
-### Using Request Builder
+- **Flag on.** The method runs.
+- **Flag off.** "Off" includes a failed evaluation. The method named by `fallbackMethod` runs with
+  the same arguments. With no fallback, the call returns `null`, `Optional.empty()`, or `false`/`0`
+  for primitive return types.
+- **Fallback requirements.** The fallback must be on the same class or a superclass, take exactly
+  the same parameter types, and return a type assignable to the annotated method's return type. It
+  may be private. If it is missing or incompatible, **application startup fails**.
+- **Proxy limits.** The annotation works only through Spring AOP proxies:
+  - It applies only to calls made through the bean's proxy. Self-invocation (`this.price(...)`)
+    is not intercepted.
+  - Private, final and static methods are not intercepted. The starter logs a warning when it
+    finds one annotated.
+  - Put the annotation on the implementation class, not on an interface method.
+  - `spring.aop.auto` must stay `true`, which is the default.
+
+### Evaluation context
+
+The edge requires a targeting key. Declare an `EvaluationContextResolver` bean to supply one.
+Without a resolver, the context is empty, so every annotated flag is treated as off.
+
+For example, to use the Spring Security principal:
 
 ```java
-@Service
-public class PaymentService {
-
-    private final FluxGateClient fluxGateClient;
-
-    public void processPayment(Payment payment) {
-        FeatureEvaluationRequest request = FeatureEvaluationRequest.builder()
-            .featureKey("new-payment-gateway")
-            .environmentId("prod")
-            .context(Map.of(
-                "user.id", payment.getUserId().toString(),
-                "payment.amount", payment.getAmount().toString(),
-                "payment.currency", payment.getCurrency()
-            ))
-            .build();
-
-        boolean useNewGateway = fluxGateClient.isEnabled(request);
-        
-        if (useNewGateway) {
-            newPaymentGateway.processPayment(payment);
-        } else {
-            legacyPaymentGateway.processPayment(payment);
+@Bean
+EvaluationContextResolver securityContextResolver() {
+    return (flagKey, method, arguments) -> {
+        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+        if (auth == null || !auth.isAuthenticated() || auth instanceof AnonymousAuthenticationToken) {
+            return EvaluationContext.empty();
         }
-    }
+        return EvaluationContext.builder()
+                .targetingKey(auth.getName())
+                .attribute("roles", auth.getAuthorities().stream().map(GrantedAuthority::getAuthority).toList())
+                .build();
+    };
 }
 ```
 
-### Async Evaluation
+## Metrics
 
-```java
-@Service
-public class AsyncFeatureService {
+Metrics are recorded when Micrometer and a `MeterRegistry` bean are present, unless you set
+`fluxgate.metrics.enabled=false`.
 
-    private final FluxGateClient fluxGateClient;
+| Meter | Type | Tags |
+|---|---|---|
+| `fluxgate.evaluation` | timer, one sample per flag evaluation | `flag`, `reason`, `variant` (`none` when absent), `error` (error code or `none`) |
+| `fluxgate.cache` | counter, one per cache lookup while the cache is on | `result` = `hit` or `miss` |
 
-    public CompletableFuture<String> processDataAsync() {
-        CompletableFuture<Boolean> featureCheck = fluxGateClient
-            .isEnabledAsync("async-processing", "prod");
+Tag values come from flag keys, variants, reasons and error codes, so cardinality stays bounded.
+The targeting key and context attributes are never tags.
 
-        return featureCheck.thenApply(enabled -> {
-            if (enabled) {
-                return processWithNewAlgorithm();
-            } else {
-                return processWithLegacyAlgorithm();
-            }
-        });
-    }
-}
-```
+## Health
 
-### Fallback Handling
+With Actuator, the starter adds a health indicator named `fluxgate`
+(`/actuator/health/fluxgate`). It never calls the edge while answering a health request. Status
+comes from cached state:
 
-```java
-@Service
-public class ResilientService {
+- **`DOWN`.** The last edge call failed, or the last `/health` probe returned not ready. A failed
+  call is an evaluation or bulk poll that ended with `UNAUTHORIZED`, `PROVIDER_NOT_READY` or a
+  transport/5xx error.
+- **`UP`.** At least one signal exists and none failed. Answers such as `FLAG_NOT_FOUND` count as
+  success, because they show the edge is serving.
+- **`UNKNOWN`.** Nothing has been observed yet.
 
-    private final FluxGateClient fluxGateClient;
+If the cached `/health` probe is older than `polling.interval` (30s when polling is off), a health
+request starts one background probe on the async executor and answers immediately. The next
+request sees the new result. Details include `edgeHealth`, `lastCall`, `lastCallStatus`,
+`errorCode` and `error`.
 
-    public void performOperation() {
-        // Never throws exceptions - uses fallback if edge server is down
-        boolean featureEnabled = fluxGateClient.isEnabledWithFallback(
-            "experimental-feature", "prod", false);
+## Extending
 
-        if (featureEnabled) {
-            tryExperimentalFeature();
-        } else {
-            useStableImplementation();
-        }
-    }
-}
-```
+- **Custom beans.** Defining your own `FluxGateClient`, `OfrepTransport`, `FluxGateProvider`
+  (named `fluxGateProvider`), `FluxGateMetrics` or `EdgeHealthTracker` bean replaces the starter's.
+- **Listeners.** Implement `FluxGateClientListener` and declare it as a bean to observe
+  evaluations, cache lookups and bulk results. Metrics and health are built this way. Listeners
+  attach only to the auto-configured `DefaultFluxGateClient`.
+- **Without Spring.** `DefaultFluxGateClient.create(properties)` builds a client.
 
-## Monitoring and Observability
-
-### Metrics
-
-When Micrometer is on the classpath, the starter automatically provides metrics:
-
-- `feature_toggle.evaluations.total` - Total number of evaluations
-- `feature_toggle.evaluations.successful` - Successful evaluations  
-- `feature_toggle.evaluations.failed` - Failed evaluations
-- `feature_toggle.fallbacks.used` - Fallback usage count
-- `feature_toggle.evaluation.duration` - Evaluation duration
-
-### Health Checks
-
-When Spring Boot Actuator is available, the starter provides a health indicator:
+## Building
 
 ```bash
-GET /actuator/health/featureToggle
+mvn clean verify
 ```
 
-Response:
-```json
-{
-  "status": "UP",
-  "details": {
-    "status": "Edge server is reachable",
-    "service": "fluxgate-edge-server"
-  }
-}
-```
-
-### Logging
-
-The starter uses SLF4J for logging. Configure logging levels:
-
-```yaml
-logging:
-  level:
-    com.fluxgate.starter: DEBUG
-```
-
-Log levels:
-- `DEBUG`: Request/response details, enrichment info
-- `INFO`: Client initialization, metrics setup
-- `WARN`: Retries, client/server errors
-- `ERROR`: Unexpected errors
-
-## Error Handling
-
-The starter provides comprehensive error handling:
-
-### Exception Types
-
-- `FeatureToggleException`: Base exception for all feature toggle operations
-  - Contains feature key, environment ID, and HTTP status code when applicable
-  - Supports both checked and unchecked scenarios
-
-### Error Scenarios
-
-1. **Network Issues**: Automatic retry with exponential backoff
-2. **Authentication Errors**: No retry, immediate failure
-3. **Server Errors**: Retry with backoff
-4. **Client Errors**: No retry, immediate failure
-
-### Fallback Behavior
-
-```java
-// Global fallback configuration
-fluxgate:
-  fallback-enabled: true
-  default-fallback-value: false
-
-// Per-request fallback
-boolean result = fluxGateClient.isEnabledWithFallback("feature", "env", true);
-```
-
-## Testing
-
-### Mock the Client
-
-```java
-@SpringBootTest
-public class MyServiceTest {
-
-    @MockBean
-    private FluxGateClient fluxGateClient;
-
-    @Test
-    public void testFeatureEnabled() {
-        when(fluxGateClient.isEnabled("my-feature", "test"))
-            .thenReturn(true);
-
-        // Your test logic here
-    }
-}
-```
-
-### Test Properties
-
-```yaml
-# application-test.yml
-fluxgate:
-  base-url: http://localhost:8081
-  fallback-enabled: true
-  default-fallback-value: false
-```
-
-## Advanced Configuration
-
-### Custom RestTemplate
-
-```java
-@Configuration
-public class FeatureToggleConfig {
-
-    @Bean
-    @Primary
-    public RestTemplate featureToggleRestTemplate() {
-        return new RestTemplateBuilder()
-            .setConnectTimeout(Duration.ofSeconds(2))
-            .setReadTimeout(Duration.ofSeconds(3))
-            .additionalInterceptors(new LoggingClientHttpRequestInterceptor())
-            .build();
-    }
-}
-```
-
-### Custom Async Executor
-
-```java
-@Configuration
-public class AsyncConfig {
-
-    @Bean
-    @Primary
-    public Executor featureToggleAsyncExecutor() {
-        ThreadPoolTaskExecutor executor = new ThreadPoolTaskExecutor();
-        executor.setCorePoolSize(5);
-        executor.setMaxPoolSize(20);
-        executor.setQueueCapacity(200);
-        executor.setThreadNamePrefix("feature-toggle-");
-        executor.initialize();
-        return executor;
-    }
-}
-```
-
-## Requirements
-
-- Java 17 or higher
-- Spring Boot 3.x
-- FluxGate Edge Server running and accessible
-
-## Optional Dependencies
-
-- **Micrometer**: For metrics collection
-- **Spring Boot Actuator**: For health indicators
-- **Spring Retry**: For retry functionality (auto-configured)
+The build enforces 80% line coverage per package with JaCoCo.
 
 ## License
 
-This project is licensed under the Apache License, Version 2.0.
-
-## Support
-
-For issues and questions:
-1. Check the [FluxGate documentation](docs/edge-server-api.md)
-2. Review the health endpoint: `/actuator/health/featureToggle`
-3. Enable debug logging: `logging.level.com.fluxgate.starter=DEBUG`
+Apache License 2.0

@@ -1,6 +1,8 @@
 package com.fluxgate.starter;
 
 import java.util.Map;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ForkJoinPool;
 
 /**
  * Typed client for the FluxGate edge server (OFREP).
@@ -9,6 +11,12 @@ import java.util.Map;
  * Evaluation methods never throw: on any failure they return the caller's
  * default value, and {@link #evaluate} reports {@code reason = "ERROR"} with an
  * {@link ErrorCode}.
+ *
+ * <p>
+ * The edge requires a targeting key. The shortcuts without a context
+ * ({@code isEnabled(key)}, {@code getString(key, default)}, ...) send none, so
+ * against a real edge they always return the default with
+ * {@link ErrorCode#TARGETING_KEY_MISSING}. Pass an {@link EvaluationContext}.
  *
  * <pre>{@code
  * EvaluationContext ctx = EvaluationContext.of("user-42");
@@ -32,6 +40,29 @@ public interface FluxGateClient {
      * @return the evaluation; never {@code null}
      */
     <T> FlagEvaluation<T> evaluate(String key, T defaultValue, Class<T> type, EvaluationContext context);
+
+    /**
+     * Runs {@link #evaluate} on an executor. The future always completes
+     * normally; failures are reported in the {@link FlagEvaluation}, as for
+     * {@link #evaluate}.
+     *
+     * <p>
+     * This default uses {@link ForkJoinPool#commonPool()}.
+     * {@link DefaultFluxGateClient} uses its configured executor: in Spring, an
+     * {@code Executor} bean named {@code fluxGateAsyncExecutor} when present.
+     *
+     * @param key          the flag key
+     * @param defaultValue returned on any error
+     * @param type         the expected value type
+     * @param context      the evaluation context, may be {@code null}
+     * @param <T>          the value type
+     * @return the pending evaluation; never {@code null}
+     */
+    default <T> CompletableFuture<FlagEvaluation<T>> evaluateAsync(String key, T defaultValue, Class<T> type,
+            EvaluationContext context) {
+        return AsyncEvaluations.supply(() -> evaluate(key, defaultValue, type, context), ForkJoinPool.commonPool(),
+                key, defaultValue);
+    }
 
     /**
      * Evaluates every flag for {@code context}. Repeated calls for the same

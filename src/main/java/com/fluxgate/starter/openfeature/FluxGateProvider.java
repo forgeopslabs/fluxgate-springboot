@@ -191,7 +191,7 @@ public class FluxGateProvider extends EventProvider {
     }
 
     private <T> ProviderEvaluation<T> toProviderEvaluation(FlagEvaluation<T> evaluation) {
-        ProviderEvaluation.ProviderEvaluationBuilder<T> builder = ProviderEvaluation.<T>builder()
+        var builder = ProviderEvaluation.<T>builder()
                 .value(evaluation.value())
                 .variant(evaluation.variant())
                 .reason(evaluation.reason());
@@ -251,8 +251,13 @@ public class FluxGateProvider extends EventProvider {
                 logger.info("FluxGate provider recovered");
                 emitProviderReady(ProviderEventDetails.builder().message("FluxGate edge is reachable").build());
             }
-            if (!changedFlags.isEmpty() && status.get() == Status.READY) {
-                client.invalidateCache();
+            if (changedFlags.isEmpty() || status.get() == Status.NOT_READY) {
+                return;
+            }
+            // Stale cached evaluations must go even if an evaluation 401 moved
+            // the provider to ERROR meanwhile; only the event needs READY.
+            client.invalidateCache();
+            if (status.get() == Status.READY) {
                 emitProviderConfigurationChanged(ProviderEventDetails.builder()
                         .flagsChanged(changedFlags)
                         .message("FluxGate flag set changed")

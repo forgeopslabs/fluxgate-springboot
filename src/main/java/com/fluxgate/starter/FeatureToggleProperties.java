@@ -1,6 +1,10 @@
 package com.fluxgate.starter;
 
 import org.springframework.boot.context.properties.ConfigurationProperties;
+import org.springframework.lang.NonNull;
+import org.springframework.util.StringUtils;
+import org.springframework.validation.Errors;
+import org.springframework.validation.Validator;
 
 import java.time.Duration;
 
@@ -10,8 +14,8 @@ import java.time.Duration;
  *
  * <pre>
  * fluxgate:
- *   base-url: http://localhost:8081
- *   sdk-key: client-id.api-key
+ *   base-url: https://edge.example.com   # required
+ *   sdk-key: client-id.api-key           # required
  *   connect-timeout: 5s
  *   read-timeout: 5s
  *   retry:
@@ -26,10 +30,20 @@ import java.time.Duration;
  *   openfeature:
  *     auto-register: false
  *     provider-name: # unset: default provider
+ *   health:
+ *     enabled: true
+ *   metrics:
+ *     enabled: true
  * </pre>
+ *
+ * <p>
+ * When the starter is enabled, binding fails fast unless {@code base-url} and
+ * {@code sdk-key} are set: the class validates itself (Spring Boot applies a
+ * {@link Validator} implemented by a {@code @ConfigurationProperties} bean), so
+ * no Bean Validation provider is needed.
  */
 @ConfigurationProperties(prefix = "fluxgate")
-public class FeatureToggleProperties {
+public class FeatureToggleProperties implements Validator {
 
     /**
      * Whether the FluxGate starter is enabled.
@@ -37,13 +51,14 @@ public class FeatureToggleProperties {
     private boolean enabled = true;
 
     /**
-     * Base URL of the FluxGate edge server.
+     * Base URL of the FluxGate edge server, for example
+     * https://edge.example.com. Required.
      */
-    private String baseUrl = "http://localhost:8081";
+    private String baseUrl;
 
     /**
-     * SDK key in the form {@code <clientId>.<apiKey>}, sent as
-     * {@code Authorization: Bearer <sdkKey>}.
+     * SDK key in the form clientId.apiKey, sent as a Bearer token in the
+     * Authorization header. Required.
      */
     private String sdkKey;
 
@@ -65,21 +80,9 @@ public class FeatureToggleProperties {
 
     private final OpenFeature openfeature = new OpenFeature();
 
-    /**
-     * Whether to enable metrics collection using Micrometer.
-     */
-    private boolean metricsEnabled = true;
+    private final Health health = new Health();
 
-    /**
-     * Whether to enable the Actuator health indicator.
-     */
-    private boolean healthCheckEnabled = true;
-
-    /**
-     * Interval for health check pings to the edge server.
-     */
-    private Duration healthCheckInterval = Duration.ofSeconds(30);
-
+    private final Metrics metrics = new Metrics();
 
     public boolean isEnabled() {
         return enabled;
@@ -129,36 +132,61 @@ public class FeatureToggleProperties {
         return cache;
     }
 
-    public boolean isMetricsEnabled() {
-        return metricsEnabled;
-    }
-
-    public void setMetricsEnabled(boolean metricsEnabled) {
-        this.metricsEnabled = metricsEnabled;
-    }
-
-    public boolean isHealthCheckEnabled() {
-        return healthCheckEnabled;
-    }
-
-    public void setHealthCheckEnabled(boolean healthCheckEnabled) {
-        this.healthCheckEnabled = healthCheckEnabled;
-    }
-
-    public Duration getHealthCheckInterval() {
-        return healthCheckInterval;
-    }
-
-    public void setHealthCheckInterval(Duration healthCheckInterval) {
-        this.healthCheckInterval = healthCheckInterval;
-    }
-
     public Polling getPolling() {
         return polling;
     }
 
     public OpenFeature getOpenfeature() {
         return openfeature;
+    }
+
+    public Health getHealth() {
+        return health;
+    }
+
+    public Metrics getMetrics() {
+        return metrics;
+    }
+
+    @Override
+    public boolean supports(@NonNull Class<?> clazz) {
+        return FeatureToggleProperties.class.isAssignableFrom(clazz);
+    }
+
+    /**
+     * Rejects a missing or malformed {@code base-url} or {@code sdk-key} while
+     * the starter is enabled.
+     */
+    @Override
+    public void validate(@NonNull Object target, @NonNull Errors errors) {
+        FeatureToggleProperties properties = (FeatureToggleProperties) target;
+        if (!properties.isEnabled()) {
+            return;
+        }
+        String url = properties.getBaseUrl();
+        if (!StringUtils.hasText(url)) {
+            errors.rejectValue("baseUrl", "fluxgate.base-url.missing",
+                    "fluxgate.base-url must be set to the FluxGate edge server URL, for example "
+                            + "https://edge.example.com (or set fluxgate.enabled=false)");
+        } else if (!url.startsWith("http://") && !url.startsWith("https://")) {
+            errors.rejectValue("baseUrl", "fluxgate.base-url.invalid",
+                    "fluxgate.base-url must be an http:// or https:// URL");
+        }
+        String key = properties.getSdkKey();
+        if (!StringUtils.hasText(key)) {
+            errors.rejectValue("sdkKey", "fluxgate.sdk-key.missing",
+                    "fluxgate.sdk-key must be set to the SDK key in the form <clientId>.<apiKey> "
+                            + "(or set fluxgate.enabled=false)");
+        } else if (!isWellFormedSdkKey(key)) {
+            // Never echo the key itself: the failure analyzer prints the rejected value.
+            errors.reject("fluxgate.sdk-key.invalid",
+                    "fluxgate.sdk-key must have the form <clientId>.<apiKey>");
+        }
+    }
+
+    private static boolean isWellFormedSdkKey(String key) {
+        int dot = key.indexOf('.');
+        return dot > 0 && dot < key.length() - 1;
     }
 
     @Override
@@ -173,6 +201,8 @@ public class FeatureToggleProperties {
                 ", cache=" + cache +
                 ", polling=" + polling +
                 ", openfeature=" + openfeature +
+                ", health=" + health +
+                ", metrics=" + metrics +
                 '}';
     }
 
@@ -271,8 +301,9 @@ public class FeatureToggleProperties {
 
         /**
          * How often the OpenFeature provider revalidates the flag set with a
-         * conditional bulk evaluation. {@code 0} disables polling, which also
-         * disables recovery after a failed initialization.
+         * conditional bulk evaluation. 0 disables polling, which also
+         * disables recovery from the provider's ERROR state. Also the minimum
+         * age before the health indicator re-probes /health (30s when 0).
          */
         private Duration interval = Duration.ofSeconds(30);
 
@@ -296,7 +327,7 @@ public class FeatureToggleProperties {
     public static class OpenFeature {
 
         /**
-         * Whether to register the FluxGate provider with {@code OpenFeatureAPI}
+         * Whether to register the FluxGate provider with OpenFeatureAPI
          * at startup.
          */
         private boolean autoRegister = false;
@@ -326,6 +357,59 @@ public class FeatureToggleProperties {
         @Override
         public String toString() {
             return "{autoRegister=" + autoRegister + ", providerName=" + providerName + '}';
+        }
+    }
+
+    /**
+     * Actuator health indicator settings.
+     */
+    public static class Health {
+
+        /**
+         * Whether to contribute the fluxgate health indicator when
+         * Actuator is on the classpath. It reports the last edge outcome and a
+         * cached /health probe; it never calls the edge on every health
+         * request.
+         */
+        private boolean enabled = true;
+
+        public boolean isEnabled() {
+            return enabled;
+        }
+
+        public void setEnabled(boolean enabled) {
+            this.enabled = enabled;
+        }
+
+        @Override
+        public String toString() {
+            return "{enabled=" + enabled + '}';
+        }
+    }
+
+    /**
+     * Micrometer metrics settings.
+     */
+    public static class Metrics {
+
+        /**
+         * Whether to record the fluxgate.evaluation timer and
+         * fluxgate.cache counter when Micrometer and a
+         * MeterRegistry are available.
+         */
+        private boolean enabled = true;
+
+        public boolean isEnabled() {
+            return enabled;
+        }
+
+        public void setEnabled(boolean enabled) {
+            this.enabled = enabled;
+        }
+
+        @Override
+        public String toString() {
+            return "{enabled=" + enabled + '}';
         }
     }
 }

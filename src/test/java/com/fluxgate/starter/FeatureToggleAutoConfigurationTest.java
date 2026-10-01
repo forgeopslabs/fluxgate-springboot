@@ -6,10 +6,16 @@ import com.fluxgate.starter.openfeature.OpenFeatureRegistrar;
 import dev.openfeature.sdk.OpenFeatureAPI;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.autoconfigure.AutoConfigurations;
+import org.springframework.boot.context.properties.bind.validation.BindValidationException;
+import org.springframework.boot.test.context.FilteredClassLoader;
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
 import org.springframework.context.ConfigurableApplicationContext;
 
+import java.util.List;
 import java.util.Map;
+import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.Executor;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
@@ -18,8 +24,13 @@ import static org.mockito.Mockito.when;
 
 class FeatureToggleAutoConfigurationTest {
 
+    /** Unreachable edge; retries off so failing calls return at once. */
+    static final String[] REQUIRED = { "fluxgate.base-url=http://localhost:1", "fluxgate.sdk-key=client.key",
+            "fluxgate.retry.max-attempts=1" };
+
     private final ApplicationContextRunner contextRunner = new ApplicationContextRunner()
-            .withConfiguration(AutoConfigurations.of(FeatureToggleAutoConfiguration.class));
+            .withConfiguration(AutoConfigurations.of(FeatureToggleAutoConfiguration.class))
+            .withPropertyValues(REQUIRED);
 
     @Test
     void configuresClientByDefault() {
@@ -28,7 +39,6 @@ class FeatureToggleAutoConfigurationTest {
             assertThat(context).hasSingleBean(OfrepTransport.class);
             assertThat(context).hasSingleBean(FluxGateClient.class);
             assertThat(context.getBean(FluxGateClient.class)).isInstanceOf(DefaultFluxGateClient.class);
-            assertThat(context).hasSingleBean(FeatureToggleHealthIndicator.class);
             assertThat(context).hasSingleBean(FluxGateProvider.class);
         });
     }
@@ -59,12 +69,106 @@ class FeatureToggleAutoConfigurationTest {
     }
 
     @Test
-    void healthIndicatorCanBeDisabled() {
+    void failsFastWithoutBaseUrlAndSdkKey() {
+        new ApplicationContextRunner()
+                .withConfiguration(AutoConfigurations.of(FeatureToggleAutoConfiguration.class))
+                .run(context -> assertThat(context).getFailure()
+                        .rootCause()
+                        .isInstanceOf(BindValidationException.class)
+                        .hasMessageContaining("fluxgate.base-url must be set")
+                        .hasMessageContaining("fluxgate.sdk-key must be set"));
+    }
+
+    @Test
+    void failsFastOnMalformedSdkKeyWithoutLeakingIt() {
         contextRunner
-                .withPropertyValues("fluxgate.health-check-enabled=false")
+                .withPropertyValues("fluxgate.sdk-key=secret-without-dot")
+                .run(context -> assertThat(context).getFailure()
+                        .rootCause()
+                        .hasMessageContaining("fluxgate.sdk-key must have the form <clientId>.<apiKey>")
+                        .hasMessageNotContaining("secret-without-dot"));
+    }
+
+    @Test
+    void disabledStarterNeedsNoProperties() {
+        new ApplicationContextRunner()
+                .withConfiguration(AutoConfigurations.of(FeatureToggleAutoConfiguration.class))
+                .withPropertyValues("fluxgate.enabled=false")
+                .run(context -> assertThat(context).hasNotFailed().doesNotHaveBean(FluxGateClient.class));
+    }
+
+    @Test
+    void registersListenerBeansWithTheClient() {
+        List<FlagEvaluation<?>> seen = new CopyOnWriteArrayList<>();
+        FluxGateClientListener listener = new FluxGateClientListener() {
+            @Override
+            public void onEvaluation(FlagEvaluation<?> evaluation, boolean fromCache, long durationNanos) {
+                seen.add(evaluation);
+            }
+        };
+
+        contextRunner
+                .withBean(FluxGateClientListener.class, () -> listener)
                 .run(context -> {
-                    assertThat(context).hasSingleBean(FluxGateClient.class);
-                    assertThat(context).doesNotHaveBean(FeatureToggleHealthIndicator.class);
+                    context.getBean(FluxGateClient.class).isEnabled("f", EvaluationContext.of("u"));
+
+                    assertThat(seen).singleElement().satisfies(e -> {
+                        assertThat(e.key()).isEqualTo("f");
+                        assertThat(e.errorCode()).isEqualTo(ErrorCode.GENERAL);
+                    });
+                });
+    }
+
+    @Test
+    void evaluateAsyncUsesTheNamedExecutorBean() {
+        AtomicInteger named = new AtomicInteger();
+        AtomicInteger other = new AtomicInteger();
+
+        contextRunner
+                .withBean(FeatureToggleAutoConfiguration.ASYNC_EXECUTOR_BEAN_NAME, Executor.class,
+                        () -> task -> {
+                            named.incrementAndGet();
+                            task.run();
+                        })
+                .withBean("taskExecutor", Executor.class, () -> task -> {
+                    other.incrementAndGet();
+                    task.run();
+                })
+                .run(context -> {
+                    FlagEvaluation<Boolean> result = context.getBean(FluxGateClient.class)
+                            .evaluateAsync("f", true, Boolean.class, EvaluationContext.of("u")).join();
+
+                    assertThat(result.value()).isTrue();
+                    assertThat(named).hasValue(1);
+                    assertThat(other).hasValue(0);
+                });
+    }
+
+    @Test
+    void evaluateAsyncIgnoresUnnamedExecutors() {
+        AtomicInteger other = new AtomicInteger();
+
+        contextRunner
+                .withBean("taskExecutor", Executor.class, () -> task -> {
+                    other.incrementAndGet();
+                    task.run();
+                })
+                .run(context -> {
+                    FlagEvaluation<Boolean> result = context.getBean(FluxGateClient.class)
+                            .evaluateAsync("f", true, Boolean.class, EvaluationContext.of("u")).join();
+
+                    assertThat(result.errorCode()).isEqualTo(ErrorCode.GENERAL);
+                    assertThat(other).hasValue(0);
+                });
+    }
+
+    @Test
+    void worksWithoutOpenFeatureOnTheClasspath() {
+        contextRunner
+                .withClassLoader(new FilteredClassLoader("dev.openfeature.sdk"))
+                .run(context -> {
+                    assertThat(context).hasNotFailed().hasSingleBean(FluxGateClient.class);
+                    assertThat(context).doesNotHaveBean("fluxGateProvider");
                 });
     }
 
@@ -74,10 +178,7 @@ class FeatureToggleAutoConfigurationTest {
 
         contextRunner
                 .withBean(FluxGateClient.class, () -> custom)
-                .run(context -> {
-                    assertThat(context.getBean(FluxGateClient.class)).isSameAs(custom);
-                    assertThat(context.getBean(FeatureToggleHealthIndicator.class)).isNotNull();
-                });
+                .run(context -> assertThat(context.getBean(FluxGateClient.class)).isSameAs(custom));
     }
 
     @Test

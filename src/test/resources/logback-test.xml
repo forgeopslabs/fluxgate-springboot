@@ -7,6 +7,8 @@
     <!-- Tests exercise failure paths on purpose; keep the build output clean. -->
     <logger name="com.fluxgate" level="ERROR"/>
     <logger name="org.springframework" level="WARN"/>
+    <!-- Startup-failure tests (missing properties, bad fallbacks) make the context log a cancelled refresh. -->
+    <logger name="org.springframework.context.annotation.AnnotationConfigApplicationContext" level="ERROR"/>
     <!-- The SDK logs failed provider initialization at ERROR; those tests fail it on purpose. -->
     <logger name="dev.openfeature" level="OFF"/>
     <logger name="wiremock" level="WARN"/>
