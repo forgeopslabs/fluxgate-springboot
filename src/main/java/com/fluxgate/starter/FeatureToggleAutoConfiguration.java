@@ -88,4 +88,32 @@ public class FeatureToggleAutoConfiguration {
             return new FeatureToggleHealthIndicator(featureToggleClient);
         }
     }
+
+    /**
+     * Configuration for OpenFeature provider.
+     * Only activated when OpenFeature SDK is on the classpath.
+     */
+    @Configuration
+    @ConditionalOnClass(name = "dev.openfeature.sdk.FeatureProvider")
+    public static class OpenFeatureConfiguration {
+
+        @Bean
+        @ConditionalOnMissingBean(name = "fluxGateProviderOptions")
+        public com.fluxgate.starter.openfeature.FluxGateProviderOptions fluxGateProviderOptions(
+                FeatureToggleProperties properties) {
+            return com.fluxgate.starter.openfeature.FluxGateProviderOptions.builder()
+                    .defaultEnvironmentId(properties.getOpenfeatureDefaultEnvironment())
+                    .environmentContextKey(properties.getOpenfeatureEnvironmentContextKey())
+                    .build();
+        }
+
+        @Bean
+        @ConditionalOnMissingBean(name = "fluxGateProvider")
+        public com.fluxgate.starter.openfeature.FluxGateProvider fluxGateProvider(
+                FluxGateClient fluxGateClient,
+                com.fluxgate.starter.openfeature.FluxGateProviderOptions options) {
+            logger.info("Creating FluxGateProvider for OpenFeature integration");
+            return new com.fluxgate.starter.openfeature.FluxGateProvider(fluxGateClient, options);
+        }
+    }
 }

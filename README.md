@@ -11,6 +11,7 @@ A Spring Boot starter for integrating with the FluxGate Feature Toggle Edge Serv
 - ⚡ **Async Support**: Asynchronous feature flag evaluation
 - 🛡️ **Fallback Support**: Graceful degradation when edge server is unavailable
 - 🎯 **Context Support**: User attributes and contextual evaluations
+- 🔓 **OpenFeature Compatible**: Use via standard OpenFeature Java SDK
 
 ## Quick Start
 
@@ -90,6 +91,116 @@ public class MyController {
 | `fluxgate.caching-enabled` | Enable caching of evaluation results | `false` | Boolean |
 | `fluxgate.cache-entry-ttl` | TTL for cached entries | `PT5M` | Duration |
 | `fluxgate.cache-max-size` | Maximum cache size | `1000` | Integer |
+| `fluxgate.openfeature-default-environment` | Default environment for OpenFeature evaluations | `default` | String |
+| `fluxgate.openfeature-environment-context-key` | Context key for environment ID | `environment` | String |
+| `fluxgate.openfeature-provider-name` | Provider name for registration | `fluxgate` | String |
+| `fluxgate.openfeature-auto-register` | Auto-register with OpenFeatureAPI | `false` | Boolean |
+
+## OpenFeature SDK Integration
+
+This starter is fully compatible with the [OpenFeature Java SDK](https://openfeature.dev/docs/reference/sdks/server/java/), allowing you to use the standard OpenFeature API for feature flag evaluation.
+
+### Installation
+
+Add both dependencies to your `pom.xml`:
+
+```xml
+<dependency>
+    <groupId>io.github.keaz</groupId>
+    <artifactId>fluxgate-spring-boot-starter</artifactId>
+    <version>1.0.0-SNAPSHOT</version>
+</dependency>
+<dependency>
+    <groupId>dev.openfeature</groupId>
+    <artifactId>sdk</artifactId>
+    <version>1.14.0</version>
+</dependency>
+```
+
+### Basic Usage
+
+When both dependencies are on the classpath, `FluxGateProvider` is automatically available as a Spring bean:
+
+```java
+import com.fluxgate.starter.openfeature.FluxGateProvider;
+import dev.openfeature.sdk.Client;
+import dev.openfeature.sdk.OpenFeatureAPI;
+import org.springframework.stereotype.Service;
+
+@Service
+public class FeatureService {
+
+    private final Client openFeatureClient;
+
+    public FeatureService(FluxGateProvider fluxGateProvider) throws Exception {
+        // Register the provider with OpenFeature
+        OpenFeatureAPI api = OpenFeatureAPI.getInstance();
+        api.setProviderAndWait(fluxGateProvider);
+        this.openFeatureClient = api.getClient();
+    }
+
+    public void doSomething() {
+        // Use standard OpenFeature API
+        boolean enabled = openFeatureClient.getBooleanValue("my-feature", false);
+        
+        if (enabled) {
+            // Feature is enabled
+        }
+    }
+}
+```
+
+### Using Evaluation Context
+
+Pass context attributes for targeted evaluations:
+
+```java
+import dev.openfeature.sdk.EvaluationContext;
+import dev.openfeature.sdk.ImmutableContext;
+import dev.openfeature.sdk.Value;
+
+// Create context with user attributes
+Map<String, Value> attributes = new HashMap<>();
+attributes.put("userId", new Value("user-123"));
+attributes.put("tier", new Value("premium"));
+attributes.put("environment", new Value("production")); // Sets environment ID
+
+EvaluationContext ctx = new ImmutableContext("user-123", attributes);
+
+// Evaluate with context
+boolean result = openFeatureClient.getBooleanValue("premium-feature", false, ctx);
+```
+
+### Environment Handling
+
+Since FluxGate requires an environment ID, the provider extracts it from the evaluation context:
+
+1. Checks for `environment` key in context (configurable via `fluxgate.openfeature-environment-context-key`)
+2. Falls back to `fluxgate.openfeature-default-environment` property
+3. Defaults to `"default"` if neither is set
+
+### Getting Flag Details
+
+Access detailed evaluation information:
+
+```java
+FlagEvaluationDetails<Boolean> details = openFeatureClient.getBooleanDetails("my-feature", false);
+
+boolean value = details.getValue();
+String reason = details.getReason();
+ErrorCode errorCode = details.getErrorCode(); // null if successful
+```
+
+### Non-Boolean Flag Types
+
+FluxGate returns boolean flag values. For other types, the boolean is converted:
+
+| Type | `true` becomes | `false` becomes |
+|------|----------------|-----------------|
+| String | `"true"` | `"false"` |
+| Integer | `1` | `0` |
+| Double | `1.0` | `0.0` |
+| Object (Value) | `Value(true)` | `Value(false)` |
 
 ## API Reference
 

@@ -135,6 +135,34 @@ public class FeatureToggleProperties {
      */
     private int cacheMaxSize = 1000;
 
+    // OpenFeature-specific properties
+
+    /**
+     * Default environment ID for OpenFeature evaluations when not specified in
+     * context.
+     * Default: "default"
+     */
+    private String openfeatureDefaultEnvironment = "default";
+
+    /**
+     * Context key used to extract environment ID from OpenFeature
+     * EvaluationContext.
+     * Default: "environment"
+     */
+    private String openfeatureEnvironmentContextKey = "environment";
+
+    /**
+     * Provider name for OpenFeature domain registration.
+     * Default: "fluxgate"
+     */
+    private String openfeatureProviderName = "fluxgate";
+
+    /**
+     * Whether to automatically register the FluxGate provider with OpenFeatureAPI.
+     * Default: false (manual registration recommended)
+     */
+    private boolean openfeatureAutoRegister = false;
+
     public String getBaseUrl() {
         return baseUrl;
     }
@@ -271,6 +299,38 @@ public class FeatureToggleProperties {
         this.cacheMaxSize = cacheMaxSize;
     }
 
+    public String getOpenfeatureDefaultEnvironment() {
+        return openfeatureDefaultEnvironment;
+    }
+
+    public void setOpenfeatureDefaultEnvironment(String openfeatureDefaultEnvironment) {
+        this.openfeatureDefaultEnvironment = openfeatureDefaultEnvironment;
+    }
+
+    public String getOpenfeatureEnvironmentContextKey() {
+        return openfeatureEnvironmentContextKey;
+    }
+
+    public void setOpenfeatureEnvironmentContextKey(String openfeatureEnvironmentContextKey) {
+        this.openfeatureEnvironmentContextKey = openfeatureEnvironmentContextKey;
+    }
+
+    public String getOpenfeatureProviderName() {
+        return openfeatureProviderName;
+    }
+
+    public void setOpenfeatureProviderName(String openfeatureProviderName) {
+        this.openfeatureProviderName = openfeatureProviderName;
+    }
+
+    public boolean isOpenfeatureAutoRegister() {
+        return openfeatureAutoRegister;
+    }
+
+    public void setOpenfeatureAutoRegister(boolean openfeatureAutoRegister) {
+        this.openfeatureAutoRegister = openfeatureAutoRegister;
+    }
+
     @Override
     public String toString() {
         return "FeatureToggleProperties{" +
@@ -291,6 +351,9 @@ public class FeatureToggleProperties {
                 ", cachingEnabled=" + cachingEnabled +
                 ", cacheEntryTtl=" + cacheEntryTtl +
                 ", cacheMaxSize=" + cacheMaxSize +
+                ", openfeatureDefaultEnvironment='" + openfeatureDefaultEnvironment + '\'' +
+                ", openfeatureProviderName='" + openfeatureProviderName + '\'' +
+                ", openfeatureAutoRegister=" + openfeatureAutoRegister +
                 '}';
     }
 }
