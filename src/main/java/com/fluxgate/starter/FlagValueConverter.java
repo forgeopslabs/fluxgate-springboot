@@ -17,8 +17,10 @@ import java.util.Map;
  * {@link String}, integral numbers to {@link Integer} (when in range) or
  * {@link Long}, any number to {@link Double}, object to {@link Map}, array to
  * {@link List}. {@link JsonNode} and {@link Object} accept any value. Anything
- * else is a {@link ErrorCode#TYPE_MISMATCH}. Primitive classes are treated as
- * their wrappers.
+ * else is a {@link ErrorCode#TYPE_MISMATCH}, except the edge's "off" marker
+ * ({@code false} with no variant, sent for disabled or unassigned flags of any
+ * type), which yields the default with the edge's reason. Primitive classes are
+ * treated as their wrappers.
  */
 final class FlagValueConverter {
 
@@ -37,6 +39,10 @@ final class FlagValueConverter {
             return new FlagEvaluation<>(result.key(), defaultValue, result.variant(), result.reason(), null, null);
         }
         Object converted = convert(result.value(), ClassUtils.resolvePrimitiveIfNecessary(type));
+        if (converted == null && isOffMarker(result)) {
+            // Disabled or unassigned: the edge sends `false` with no variant whatever the flag's type.
+            return new FlagEvaluation<>(result.key(), defaultValue, null, result.reason(), null, null);
+        }
         if (converted == null) {
             return FlagEvaluation.error(result.key(), defaultValue, ErrorCode.TYPE_MISMATCH,
                     "Flag '" + result.key() + "' has a " + result.value().getNodeType().name().toLowerCase(Locale.ROOT)
@@ -45,6 +51,16 @@ final class FlagValueConverter {
         @SuppressWarnings("unchecked") // convert() returns an instance of the (wrapped) requested type
         T value = (T) converted;
         return new FlagEvaluation<>(result.key(), value, result.variant(), result.reason(), null, null);
+    }
+
+    /**
+     * The edge answers a disabled flag ({@code reason=DISABLED}) or a user with
+     * no variant assigned with {@code value: false} and no variant, for every
+     * flag type. For a non-boolean request that means "use the default", not a
+     * type mismatch.
+     */
+    private static boolean isOffMarker(OfrepFlagResult result) {
+        return result.variant() == null && result.value().isBoolean() && !result.value().booleanValue();
     }
 
     /**

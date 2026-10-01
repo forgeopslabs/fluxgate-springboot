@@ -157,6 +157,14 @@ class DefaultFluxGateClientTest {
         }
 
         @Test
+        void listFlag() {
+            stubFlag("regions", 200, "{\"key\": \"regions\", \"value\": [\"eu\", \"us\"], \"reason\": \"STATIC\"}");
+
+            assertThat(client.evaluate("regions", List.of(), List.class, USER).value()).isEqualTo(List.of("eu", "us"));
+            assertThat(client.evaluate("regions", null, Object.class, USER).value()).isEqualTo(List.of("eu", "us"));
+        }
+
+        @Test
         void missingValueResolvesToCodeDefault() {
             stubFlag("new-checkout", 200, fixture("flag-code-default.json"));
 
@@ -364,6 +372,52 @@ class DefaultFluxGateClientTest {
             assertThat(client.evaluate(" ", true, Boolean.class, USER).errorCode()).isEqualTo(ErrorCode.GENERAL);
             assertThat(client.evaluate(null, true, Boolean.class, USER).value()).isTrue();
             assertThat(client.evaluate("new-checkout", "x", null, USER).errorCode()).isEqualTo(ErrorCode.GENERAL);
+        }
+    }
+
+    @Nested
+    class OffMarker {
+
+        @Test
+        void disabledStringFlagReturnsDefaultWithDisabledReason() {
+            stubFlag("banner-color", 200, fixture("flag-string-disabled.json"));
+
+            FlagEvaluation<String> result = client.evaluate("banner-color", "red", String.class, USER);
+
+            assertThat(result).isEqualTo(new FlagEvaluation<>("banner-color", "red", null, "DISABLED", null, null));
+            assertThat(client.getString("banner-color", "red", USER)).isEqualTo("red");
+            assertThat(client.getInteger("banner-color", 7, USER)).isEqualTo(7);
+            assertThat(client.getDouble("banner-color", 1.5, USER)).isEqualTo(1.5);
+        }
+
+        @Test
+        void unassignedObjectFlagReturnsDefaultWithoutError() {
+            stubFlag("theme", 200, fixture("flag-object-unassigned.json"));
+
+            FlagEvaluation<Map> result = client.evaluate("theme", Map.of("color", "light"), Map.class, USER);
+
+            assertThat(result.value()).isEqualTo(Map.of("color", "light"));
+            assertThat(result.reason()).isEqualTo("DEFAULT");
+            assertThat(result.isError()).isFalse();
+        }
+
+        @Test
+        void booleanAndUntypedRequestsStillSeeFalse() {
+            stubFlag("banner-color", 200, fixture("flag-string-disabled.json"));
+
+            FlagEvaluation<Boolean> asBoolean = client.evaluate("banner-color", true, Boolean.class, USER);
+            assertThat(asBoolean.value()).isFalse();
+            assertThat(asBoolean.reason()).isEqualTo("DISABLED");
+            assertThat(client.evaluate("banner-color", null, Object.class, USER).value()).isEqualTo(false);
+        }
+
+        @Test
+        void falseWithVariantIsStillATypeMismatch() {
+            stubFlag("banner-color", 200,
+                    "{\"key\": \"banner-color\", \"value\": false, \"reason\": \"SPLIT\", \"variant\": \"off\"}");
+
+            assertThat(client.evaluate("banner-color", "red", String.class, USER).errorCode())
+                    .isEqualTo(ErrorCode.TYPE_MISMATCH);
         }
     }
 
@@ -621,13 +675,5 @@ class DefaultFluxGateClientTest {
 
             assertThat(client.isHealthy()).isFalse();
         }
-    }
-
-    @Test
-    void listFlagsAreSupported() {
-        stubFlag("regions", 200, "{\"key\": \"regions\", \"value\": [\"eu\", \"us\"], \"reason\": \"STATIC\"}");
-
-        assertThat(client.evaluate("regions", List.of(), List.class, USER).value()).isEqualTo(List.of("eu", "us"));
-        assertThat(client.evaluate("regions", null, Object.class, USER).value()).isEqualTo(List.of("eu", "us"));
     }
 }
