@@ -6,6 +6,7 @@ import com.fluxgate.starter.openfeature.OpenFeatureRegistrar;
 import dev.openfeature.sdk.OpenFeatureAPI;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.autoconfigure.AutoConfigurations;
+import org.springframework.boot.autoconfigure.task.TaskExecutionAutoConfiguration;
 import org.springframework.boot.context.properties.bind.validation.BindValidationException;
 import org.springframework.boot.test.context.FilteredClassLoader;
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
@@ -120,16 +121,15 @@ class FeatureToggleAutoConfigurationTest {
     }
 
     @Test
-    void evaluateAsyncUsesTheNamedExecutorBean() {
+    void evaluateAsyncUsesTheFluxGateExecutorBean() {
         AtomicInteger named = new AtomicInteger();
         AtomicInteger other = new AtomicInteger();
 
         contextRunner
-                .withBean(FeatureToggleAutoConfiguration.ASYNC_EXECUTOR_BEAN_NAME, Executor.class,
-                        () -> task -> {
-                            named.incrementAndGet();
-                            task.run();
-                        })
+                .withBean(FluxGateAsyncExecutor.class, () -> FluxGateAsyncExecutor.of(task -> {
+                    named.incrementAndGet();
+                    task.run();
+                }))
                 .withBean("taskExecutor", Executor.class, () -> task -> {
                     other.incrementAndGet();
                     task.run();
@@ -145,7 +145,20 @@ class FeatureToggleAutoConfigurationTest {
     }
 
     @Test
-    void evaluateAsyncIgnoresUnnamedExecutors() {
+    void fluxGateExecutorKeepsBootsApplicationTaskExecutor() {
+        new ApplicationContextRunner()
+                .withConfiguration(AutoConfigurations.of(TaskExecutionAutoConfiguration.class,
+                        FeatureToggleAutoConfiguration.class))
+                .withPropertyValues(REQUIRED)
+                .withBean(FluxGateAsyncExecutor.class, () -> Runnable::run)
+                .run(context -> {
+                    assertThat(context).hasBean(TaskExecutionAutoConfiguration.APPLICATION_TASK_EXECUTOR_BEAN_NAME);
+                    assertThat(context.getBean(FluxGateAsyncExecutor.class)).isNotInstanceOf(Executor.class);
+                });
+    }
+
+    @Test
+    void evaluateAsyncIgnoresPlainExecutors() {
         AtomicInteger other = new AtomicInteger();
 
         contextRunner

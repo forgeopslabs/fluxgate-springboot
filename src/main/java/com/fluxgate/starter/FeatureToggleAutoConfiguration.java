@@ -7,7 +7,6 @@ import dev.openfeature.sdk.OpenFeatureAPI;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.ObjectProvider;
-import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnClass;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
@@ -29,13 +28,6 @@ import java.util.concurrent.ForkJoinPool;
 @ConditionalOnProperty(prefix = "fluxgate", name = "enabled", havingValue = "true", matchIfMissing = true)
 public class FeatureToggleAutoConfiguration {
 
-    /**
-     * Name of an optional {@link Executor} bean that runs
-     * {@link FluxGateClient#evaluateAsync} and background {@code /health}
-     * probes. Without it, {@link ForkJoinPool#commonPool()} is used.
-     */
-    public static final String ASYNC_EXECUTOR_BEAN_NAME = "fluxGateAsyncExecutor";
-
     private static final Logger logger = LoggerFactory.getLogger(FeatureToggleAutoConfiguration.class);
 
     @Bean
@@ -50,10 +42,19 @@ public class FeatureToggleAutoConfiguration {
     @ConditionalOnMissingBean
     public FluxGateClient fluxGateClient(OfrepTransport fluxGateOfrepTransport, FeatureToggleProperties properties,
             ObjectProvider<FluxGateClientListener> listeners,
-            @Qualifier(ASYNC_EXECUTOR_BEAN_NAME) ObjectProvider<Executor> asyncExecutor) {
+            ObjectProvider<FluxGateAsyncExecutor> asyncExecutor) {
         logger.info("Creating FluxGateClient with base URL: {}", properties.getBaseUrl());
         return new DefaultFluxGateClient(fluxGateOfrepTransport, properties, listeners.orderedStream().toList(),
-                asyncExecutor.getIfAvailable(ForkJoinPool::commonPool));
+                asyncExecutor(asyncExecutor));
+    }
+
+    /**
+     * @return the {@link FluxGateAsyncExecutor} bean as an {@link Executor}, or
+     *         {@link ForkJoinPool#commonPool()} when there is none
+     */
+    public static Executor asyncExecutor(ObjectProvider<FluxGateAsyncExecutor> asyncExecutor) {
+        FluxGateAsyncExecutor executor = asyncExecutor.getIfAvailable();
+        return executor == null ? ForkJoinPool.commonPool() : executor.asExecutor();
     }
 
     /**

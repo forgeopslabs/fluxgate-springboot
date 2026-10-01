@@ -130,16 +130,25 @@ Rules for values:
 
 ### Async evaluation
 
-`evaluateAsync` runs on the `Executor` bean named `fluxGateAsyncExecutor` if you define one.
-Otherwise it uses `ForkJoinPool.commonPool()`. If the executor rejects the task, the future
-completes with your default and a `GENERAL` error.
+`evaluateAsync` and the health indicator's background `/health` probes run on a
+`FluxGateAsyncExecutor` bean if you define one. Otherwise they use `ForkJoinPool.commonPool()`. If
+the executor rejects a task, the future completes with your default and a `GENERAL` error.
+
+**In production, define a dedicated executor.** Evaluations are blocking HTTP calls, and with
+retries one call can take several read timeouts. On the common pool they can starve other users
+of that pool, such as parallel streams and `CompletableFuture` stages.
 
 ```java
-@Bean(FeatureToggleAutoConfiguration.ASYNC_EXECUTOR_BEAN_NAME)   // "fluxGateAsyncExecutor"
-Executor fluxGateAsyncExecutor() {
-    return Executors.newVirtualThreadPerTaskExecutor();           // Java 21
+@Bean
+FluxGateAsyncExecutor fluxGateAsyncExecutor() {
+    return FluxGateAsyncExecutor.of(Executors.newVirtualThreadPerTaskExecutor()); // Java 21
 }
 ```
+
+`FluxGateAsyncExecutor` is deliberately not a `java.util.concurrent.Executor`. Declaring a plain
+`Executor` bean makes Spring Boot drop its `applicationTaskExecutor`, which changes `@Async` and
+MVC async handling across the whole application. A `FluxGateAsyncExecutor` bean leaves Boot's
+executor alone. The starter ignores plain `Executor` beans.
 
 ### Caching
 
@@ -283,15 +292,21 @@ With Actuator, the starter adds a health indicator named `fluxgate`
 (`/actuator/health/fluxgate`). It never calls the edge while answering a health request. Status
 comes from cached state:
 
-- **`DOWN`.** The last edge call failed, or the last `/health` probe returned not ready. A failed
-  call is an evaluation or bulk poll that ended with `UNAUTHORIZED`, `PROVIDER_NOT_READY` or a
-  transport/5xx error.
+- **`DOWN`.** The last `/health` probe returned not ready, or the last edge call failed and that
+  failure still counts. A failed call is an evaluation or bulk poll that ended with
+  `UNAUTHORIZED`, `PROVIDER_NOT_READY` or a transport/5xx error.
+  - A transient failure (`PROVIDER_NOT_READY`, transport/5xx) stops counting once a healthy
+    `/health` probe finishes after it. The indicator starts that probe as soon as it sees a
+    failure newer than its last probe, so a single blip does not hold the status at `DOWN`.
+    Cache hits never reach the edge, so they cannot clear a failure.
+  - `UNAUTHORIZED` (401/403) keeps the status `DOWN` until a later call succeeds, because `/health`
+    cannot detect a bad SDK key.
 - **`UP`.** At least one signal exists and none failed. Answers such as `FLAG_NOT_FOUND` count as
   success, because they show the edge is serving.
 - **`UNKNOWN`.** Nothing has been observed yet.
 
-If the cached `/health` probe is older than `polling.interval` (30s when polling is off), a health
-request starts one background probe on the async executor and answers immediately. The next
+If the cached `/health` probe is older than `polling.interval` (30s when polling is off), or older
+than a transient failure, a health request starts one background probe on the async executor and answers immediately. The next
 request sees the new result. Details include `edgeHealth`, `lastCall`, `lastCallStatus`,
 `errorCode` and `error`.
 

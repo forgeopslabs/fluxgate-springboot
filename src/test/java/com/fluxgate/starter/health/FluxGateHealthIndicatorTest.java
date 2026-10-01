@@ -4,6 +4,8 @@ import com.fluxgate.starter.ErrorCode;
 import com.fluxgate.starter.FlagEvaluation;
 import com.fluxgate.starter.FluxGateClient;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.EnumSource;
 import org.springframework.boot.actuate.health.Health;
 import org.springframework.boot.actuate.health.Status;
 
@@ -114,6 +116,52 @@ class FluxGateHealthIndicatorTest {
                 .containsEntry("lastCallStatus", "FAILURE")
                 .containsEntry("errorCode", "UNAUTHORIZED")
                 .containsEntry("error", "Client credentials are missing or invalid");
+    }
+
+    @ParameterizedTest
+    @EnumSource(value = ErrorCode.class, names = { "GENERAL", "PROVIDER_NOT_READY" })
+    void transientFailureIsSupersededByANewerHealthyProbe(ErrorCode code) {
+        when(client.isHealthy()).thenReturn(true);
+        tracker.recordProbe(true);
+        clock.advance(Duration.ofSeconds(1));
+        tracker.onEvaluation(FlagEvaluation.error("f", false, code, "blip"), false, 1);
+
+        // The probe is fresh, but older than the failure: DOWN now, and a re-probe starts at once.
+        assertThat(indicator.health().getStatus()).isEqualTo(Status.DOWN);
+        assertThat(queued).hasSize(1);
+        clock.advance(Duration.ofSeconds(1));
+        runQueuedProbes();
+
+        Health health = indicator.health();
+        assertThat(health.getStatus()).isEqualTo(Status.UP);
+        assertThat(health.getDetails()).containsEntry("lastCallStatus", "FAILURE").containsEntry("edgeHealth", "UP");
+        assertThat(queued).isEmpty();
+    }
+
+    @Test
+    void transientFailureAfterTheProbeStaysDownWhenTheReProbeFails() {
+        when(client.isHealthy()).thenReturn(false);
+        tracker.onEvaluation(FlagEvaluation.error("f", false, ErrorCode.GENERAL, "timeout"), false, 1);
+        indicator.health();
+        clock.advance(Duration.ofSeconds(1));
+        runQueuedProbes();
+
+        assertThat(indicator.health().getStatus()).isEqualTo(Status.DOWN);
+    }
+
+    @Test
+    void unauthorizedStaysDownDespiteHealthyProbesUntilACallSucceeds() {
+        when(client.isHealthy()).thenReturn(true);
+        tracker.onEvaluation(FlagEvaluation.error("f", false, ErrorCode.UNAUTHORIZED, "rejected"), false, 1);
+        clock.advance(Duration.ofSeconds(1));
+        tracker.recordProbe(true);
+        clock.advance(Duration.ofSeconds(1));
+
+        assertThat(indicator.health().getStatus()).isEqualTo(Status.DOWN);
+        assertThat(queued).isEmpty();
+
+        tracker.onEvaluation(new FlagEvaluation<>("f", true, null, "STATIC", null, null), false, 1);
+        assertThat(indicator.health().getStatus()).isEqualTo(Status.UP);
     }
 
     @Test

@@ -49,7 +49,7 @@ public interface FluxGateClient {
      * <p>
      * This default uses {@link ForkJoinPool#commonPool()}.
      * {@link DefaultFluxGateClient} uses its configured executor: in Spring, an
-     * {@code Executor} bean named {@code fluxGateAsyncExecutor} when present.
+     * {@link FluxGateAsyncExecutor} bean when present.
      *
      * @param key          the flag key
      * @param defaultValue returned on any error

@@ -2,9 +2,9 @@ package com.fluxgate.starter.health;
 
 import com.fluxgate.starter.FeatureToggleAutoConfiguration;
 import com.fluxgate.starter.FeatureToggleProperties;
+import com.fluxgate.starter.FluxGateAsyncExecutor;
 import com.fluxgate.starter.FluxGateClient;
 import org.springframework.beans.factory.ObjectProvider;
-import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.boot.actuate.health.HealthIndicator;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
@@ -15,8 +15,6 @@ import org.springframework.context.annotation.Bean;
 
 import java.time.Clock;
 import java.time.Duration;
-import java.util.concurrent.Executor;
-import java.util.concurrent.ForkJoinPool;
 
 /**
  * Contributes the {@code fluxgate} Actuator health indicator. Disabled with
@@ -46,10 +44,10 @@ public class FluxGateHealthAutoConfiguration {
     @ConditionalOnMissingBean(name = "fluxgateHealthIndicator")
     public FluxGateHealthIndicator fluxgateHealthIndicator(FluxGateClient fluxGateClient, EdgeHealthTracker tracker,
             FeatureToggleProperties properties,
-            @Qualifier(FeatureToggleAutoConfiguration.ASYNC_EXECUTOR_BEAN_NAME) ObjectProvider<Executor> executor) {
+            ObjectProvider<FluxGateAsyncExecutor> executor) {
         Duration polling = properties.getPolling().getInterval();
         Duration probeInterval = polling.isZero() ? DEFAULT_PROBE_INTERVAL : polling;
-        return new FluxGateHealthIndicator(fluxGateClient, tracker, executor.getIfAvailable(ForkJoinPool::commonPool),
+        return new FluxGateHealthIndicator(fluxGateClient, tracker, FeatureToggleAutoConfiguration.asyncExecutor(executor),
                 probeInterval, Clock.systemUTC());
     }
 }

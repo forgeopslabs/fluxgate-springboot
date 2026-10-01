@@ -2,6 +2,7 @@ package com.fluxgate.starter.health;
 
 import com.fluxgate.starter.EvaluationContext;
 import com.fluxgate.starter.FeatureToggleAutoConfiguration;
+import com.fluxgate.starter.FluxGateAsyncExecutor;
 import com.fluxgate.starter.FluxGateClient;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.actuate.health.Status;
@@ -9,7 +10,6 @@ import org.springframework.boot.autoconfigure.AutoConfigurations;
 import org.springframework.boot.test.context.FilteredClassLoader;
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
 
-import java.util.concurrent.Executor;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -27,8 +27,7 @@ class FluxGateHealthAutoConfigurationTest {
     void registersIndicatorNamedFluxgateFedByTheClient() {
         AtomicInteger probes = new AtomicInteger();
         contextRunner
-                .withBean(FeatureToggleAutoConfiguration.ASYNC_EXECUTOR_BEAN_NAME, Executor.class,
-                        () -> task -> probes.incrementAndGet())
+                .withBean(FluxGateAsyncExecutor.class, () -> task -> probes.incrementAndGet())
                 .run(context -> {
                     assertThat(context).hasBean("fluxgateHealthIndicator").hasSingleBean(EdgeHealthTracker.class);
                     FluxGateHealthIndicator indicator = context.getBean(FluxGateHealthIndicator.class);
