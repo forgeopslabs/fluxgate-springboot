@@ -1,0 +1,5 @@
+com.forgeopslabs.fluxgate.spring.FeatureToggleAutoConfiguration
+com.forgeopslabs.fluxgate.spring.DisabledFluxGateAutoConfiguration
+com.forgeopslabs.fluxgate.spring.metrics.FluxGateMetricsAutoConfiguration
+com.forgeopslabs.fluxgate.spring.health.FluxGateHealthAutoConfiguration
+com.forgeopslabs.fluxgate.spring.aop.FeatureToggleAspectAutoConfiguration

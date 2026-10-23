@@ -1,0 +1,9 @@
+{
+  "flags": [
+    {"key": "banner-color", "value": "green", "reason": "SPLIT", "variant": "green"},
+    {"key": "max-items", "value": 42, "reason": "STATIC", "variant": "forty-two"},
+    {"key": "new-checkout", "value": true, "reason": "TARGETING_MATCH"},
+    {"key": "old-flag", "errorCode": "FLAG_NOT_FOUND", "errorDetails": "The requested feature flag does not exist"}
+  ],
+  "metadata": {"version": "60303ae22b998861bce3b28f33eec1be758a213c86c93c076dbe9f558c11c752"}
+}

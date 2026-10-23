@@ -1,25 +1,58 @@
-# FluxGate Spring Boot Starter
+# FluxGate Java SDK
 
-A Spring Boot starter for the FluxGate feature toggle edge server. It talks to the edge over
+Java libraries for the FluxGate feature toggle edge server. They talk to the edge over
 [OFREP](https://openfeature.dev/specification/appendix-c) (the OpenFeature Remote Evaluation
-Protocol) and provides:
+Protocol), authenticated with a client's SDK key.
 
-- a typed `FluxGateClient` with a short-lived evaluation cache and retries,
-- an OpenFeature provider (`FluxGateProvider`) with change polling and provider events,
-- a `@FeatureToggle` method annotation,
-- Micrometer metrics and an Actuator health indicator.
+| Artifact | Use it for |
+|---|---|
+| `com.forgeopslabs:fluxgate-java` | Any Java 17+ application. The typed `FluxGateClient` (JDK `HttpClient`, evaluation cache, retries, circuit breaker) and the OpenFeature provider `FluxGateProvider` with change polling and provider events. No Spring. |
+| `com.forgeopslabs:fluxgate-spring-boot-starter` | Spring Boot 3.5 applications. Configures `fluxgate-java` from `fluxgate.*` properties and adds the `@FeatureToggle` method annotation, Micrometer metrics and an Actuator health indicator. |
 
-Requirements: Java 17+, Spring Boot 3.5.
+Requirements: Java 17+. The starter needs Spring Boot 3.5.
+
+[samples/](samples/) holds a plain Java app and a Spring Boot app that run against a local FluxGate
+stack.
 
 ## Installation
 
+Spring Boot:
+
 ```xml
 <dependency>
-    <groupId>io.github.keaz</groupId>
+    <groupId>com.forgeopslabs</groupId>
     <artifactId>fluxgate-spring-boot-starter</artifactId>
-    <version>1.0.0-SNAPSHOT</version>
+    <version>1.0.0</version>
 </dependency>
 ```
+
+Plain Java:
+
+```xml
+<dependency>
+    <groupId>com.forgeopslabs</groupId>
+    <artifactId>fluxgate-java</artifactId>
+    <version>1.0.0</version>
+</dependency>
+```
+
+```java
+FluxGateClient client = DefaultFluxGateClient.create(FluxGateOptions.builder()
+        .baseUrl("https://edge.example.com")
+        .sdkKey(System.getenv("FLUXGATE_SDK_KEY"))   // <clientId>.<apiKey>
+        .build());
+
+boolean enabled = client.isEnabled("new-checkout", EvaluationContext.of("user-1"));
+```
+
+`FluxGateOptions` has the same timeout, retry, cache and circuit breaker settings as the starter
+properties below, with the same defaults. To use OpenFeature without Spring, add `dev.openfeature:sdk`
+and register `new FluxGateProvider(client)`.
+
+The rest of this page describes the Spring Boot starter. The client API in
+[Typed client](#typed-client) and [OpenFeature](#openfeature) is the same in both artifacts.
+
+### Starter features
 
 Each optional feature turns on when its dependency is on your classpath:
 
@@ -370,11 +403,12 @@ management:
 - **Listeners.** Implement `FluxGateClientListener` and declare it as a bean to observe
   evaluations, cache lookups and bulk results. Metrics and health are built this way. Listeners
   attach only to the auto-configured `DefaultFluxGateClient`.
-- **Without Spring.** `DefaultFluxGateClient.create(properties)` builds a client.
-- **Internal packages.** `com.fluxgate.starter.ofrep.*` and `com.fluxgate.starter.cache.*` are
-  internal, with no compatibility guarantee between releases. Depend on `FluxGateClient`,
-  `FlagEvaluation`, `EvaluationContext` and the other types in `com.fluxgate.starter` and its
-  `annotation`, `openfeature`, `metrics` and `health` packages.
+- **Without Spring.** `DefaultFluxGateClient.create(FluxGateOptions)` builds a client; see [Installation](#installation).
+- **Internal packages.** `com.forgeopslabs.fluxgate.ofrep.*` and `com.forgeopslabs.fluxgate.cache.*`
+  are internal, with no compatibility guarantee between releases. Depend on `FluxGateClient`,
+  `FlagEvaluation`, `EvaluationContext`, `FluxGateOptions` and the other types in
+  `com.forgeopslabs.fluxgate` and `com.forgeopslabs.fluxgate.openfeature`, and on the starter's
+  `com.forgeopslabs.fluxgate.spring` packages.
 
 ## Building
 
@@ -382,7 +416,28 @@ management:
 mvn clean verify
 ```
 
-The build enforces 80% line coverage per package with JaCoCo.
+The build enforces 80% line coverage per package with JaCoCo. CI builds on JDK 17, 21 and 25.
+
+## Releasing
+
+`.github/workflows/release.yml` publishes `fluxgate-parent`, `fluxgate-java` and
+`fluxgate-spring-boot-starter` to Maven Central through the
+[Central Portal](https://central.sonatype.com) when a GitHub release is published. The samples are
+never published. The release tag sets the version: tag `v1.2.0` publishes `1.2.0`. The POMs on
+`main` stay on a `-SNAPSHOT` version.
+
+One-time setup:
+
+1. Sign in to the Central Portal and add the namespace `com.forgeopslabs`. Verify it with the DNS
+   TXT record the portal shows for `forgeopslabs.com`.
+2. Generate a Central Portal user token (View Account > Generate User Token).
+3. Create a GPG key for signing, publish the public key to a key server (for example
+   `gpg --keyserver keys.openpgp.org --send-keys <KEY_ID>`), and export the private key with
+   `gpg --armor --export-secret-keys <KEY_ID>`.
+4. Add the repository secrets `CENTRAL_USERNAME`, `CENTRAL_TOKEN`, `GPG_PRIVATE_KEY` and
+   `GPG_PASSPHRASE`.
+
+Maven Central releases are permanent: a published version can never be changed or deleted.
 
 ## License
 

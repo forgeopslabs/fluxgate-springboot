@@ -1,0 +1,227 @@
+package com.forgeopslabs.fluxgate.spring.health;
+
+import com.forgeopslabs.fluxgate.ErrorCode;
+import com.forgeopslabs.fluxgate.FlagEvaluation;
+import com.forgeopslabs.fluxgate.FluxGateClient;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.EnumSource;
+import org.springframework.boot.actuate.health.Health;
+import org.springframework.boot.actuate.health.Status;
+
+import java.time.Clock;
+import java.time.Duration;
+import java.time.Instant;
+import java.time.ZoneId;
+import java.time.ZoneOffset;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.concurrent.Executor;
+import java.util.concurrent.RejectedExecutionException;
+
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
+
+class FluxGateHealthIndicatorTest {
+
+    private static final Duration INTERVAL = Duration.ofSeconds(30);
+
+    private final MutableClock clock = new MutableClock(Instant.parse("2026-10-01T12:00:00Z"));
+    private final FluxGateClient client = mock(FluxGateClient.class);
+    private final EdgeHealthTracker tracker = new EdgeHealthTracker(clock);
+    private final List<Runnable> queued = new ArrayList<>();
+    private final FluxGateHealthIndicator indicator = new FluxGateHealthIndicator(client, tracker, queued::add,
+            INTERVAL, clock);
+
+    private void runQueuedProbes() {
+        List<Runnable> tasks = new ArrayList<>(queued);
+        queued.clear();
+        tasks.forEach(Runnable::run);
+    }
+
+    @Test
+    void unknownBeforeAnySignalAndNeverBlocksOnTheEdge() {
+        Health health = indicator.health();
+
+        assertThat(health.getStatus()).isEqualTo(Status.UNKNOWN);
+        assertThat(health.getDetails()).isEmpty();
+        verify(client, never()).isHealthy();
+        assertThat(queued).hasSize(1);
+    }
+
+    @Test
+    void backgroundProbeResultIsServedOnTheNextRequest() {
+        when(client.isHealthy()).thenReturn(true);
+        indicator.health();
+        runQueuedProbes();
+
+        Health health = indicator.health();
+
+        assertThat(health.getStatus()).isEqualTo(Status.UP);
+        assertThat(health.getDetails()).containsEntry("edgeHealth", "UP")
+                .containsEntry("edgeHealthCheckedAt", "2026-10-01T12:00:00Z");
+    }
+
+    @Test
+    void freshProbeIsNotRepeatedAndStaleProbeIsRefreshedOnce() {
+        when(client.isHealthy()).thenReturn(true);
+        indicator.health();
+        runQueuedProbes();
+
+        clock.advance(INTERVAL.minusSeconds(1));
+        indicator.health();
+        assertThat(queued).isEmpty();
+
+        clock.advance(Duration.ofSeconds(1));
+        indicator.health();
+        indicator.health();
+        assertThat(queued).hasSize(1);
+        runQueuedProbes();
+        verify(client, times(2)).isHealthy();
+    }
+
+    @Test
+    void notReadyProbeIsDown() {
+        when(client.isHealthy()).thenReturn(false);
+        indicator.health();
+        runQueuedProbes();
+
+        assertThat(indicator.health().getStatus()).isEqualTo(Status.DOWN);
+    }
+
+    @Test
+    void probeExceptionCountsAsNotReady() {
+        when(client.isHealthy()).thenThrow(new IllegalStateException("boom"));
+        indicator.health();
+        runQueuedProbes();
+
+        assertThat(indicator.health().getDetails()).containsEntry("edgeHealth", "DOWN");
+    }
+
+    @Test
+    void failedLastCallIsDownEvenWhenTheProbeIsUp() {
+        tracker.recordProbe(true);
+        tracker.onEvaluation(FlagEvaluation.error("f", false, ErrorCode.UNAUTHORIZED, "Client credentials are "
+                + "missing or invalid"), false, 1);
+
+        Health health = indicator.health();
+
+        assertThat(health.getStatus()).isEqualTo(Status.DOWN);
+        assertThat(health.getDetails())
+                .containsEntry("lastCall", "evaluation")
+                .containsEntry("lastCallStatus", "FAILURE")
+                .containsEntry("errorCode", "UNAUTHORIZED")
+                .containsEntry("error", "Client credentials are missing or invalid");
+    }
+
+    @ParameterizedTest
+    @EnumSource(value = ErrorCode.class, names = { "GENERAL", "PROVIDER_NOT_READY" })
+    void transientFailureIsSupersededByANewerHealthyProbe(ErrorCode code) {
+        when(client.isHealthy()).thenReturn(true);
+        tracker.recordProbe(true);
+        clock.advance(Duration.ofSeconds(1));
+        tracker.onEvaluation(FlagEvaluation.error("f", false, code, "blip"), false, 1);
+
+        // The probe is fresh, but older than the failure: DOWN now, and a re-probe starts at once.
+        assertThat(indicator.health().getStatus()).isEqualTo(Status.DOWN);
+        assertThat(queued).hasSize(1);
+        clock.advance(Duration.ofSeconds(1));
+        runQueuedProbes();
+
+        Health health = indicator.health();
+        assertThat(health.getStatus()).isEqualTo(Status.UP);
+        assertThat(health.getDetails()).containsEntry("lastCallStatus", "FAILURE").containsEntry("edgeHealth", "UP");
+        assertThat(queued).isEmpty();
+    }
+
+    @Test
+    void transientFailureAfterTheProbeStaysDownWhenTheReProbeFails() {
+        when(client.isHealthy()).thenReturn(false);
+        tracker.onEvaluation(FlagEvaluation.error("f", false, ErrorCode.GENERAL, "timeout"), false, 1);
+        indicator.health();
+        clock.advance(Duration.ofSeconds(1));
+        runQueuedProbes();
+
+        assertThat(indicator.health().getStatus()).isEqualTo(Status.DOWN);
+    }
+
+    @Test
+    void unauthorizedStaysDownDespiteHealthyProbesUntilACallSucceeds() {
+        when(client.isHealthy()).thenReturn(true);
+        tracker.onEvaluation(FlagEvaluation.error("f", false, ErrorCode.UNAUTHORIZED, "rejected"), false, 1);
+        clock.advance(Duration.ofSeconds(1));
+        tracker.recordProbe(true);
+        clock.advance(Duration.ofSeconds(1));
+
+        assertThat(indicator.health().getStatus()).isEqualTo(Status.DOWN);
+        assertThat(queued).isEmpty();
+
+        tracker.onEvaluation(new FlagEvaluation<>("f", true, null, "STATIC", null, null), false, 1);
+        assertThat(indicator.health().getStatus()).isEqualTo(Status.UP);
+    }
+
+    @Test
+    void failureWithoutMessageOmitsTheErrorDetail() {
+        tracker.onBulkEvaluation(com.forgeopslabs.fluxgate.BulkEvaluation.error(ErrorCode.GENERAL, null));
+
+        assertThat(indicator.health().getDetails()).containsEntry("errorCode", "GENERAL").doesNotContainKey("error");
+    }
+
+    @Test
+    void successfulLastCallWithoutProbeIsUp() {
+        tracker.onEvaluation(new FlagEvaluation<>("f", true, null, "STATIC", null, null), false, 1);
+
+        Health health = indicator.health();
+
+        assertThat(health.getStatus()).isEqualTo(Status.UP);
+        assertThat(health.getDetails()).containsEntry("lastCallStatus", "SUCCESS")
+                .containsEntry("lastCallAt", "2026-10-01T12:00:00Z").doesNotContainKey("errorCode");
+    }
+
+    @Test
+    void rejectedProbeIsRetriedOnTheNextRequest() {
+        Executor rejecting = task -> {
+            throw new RejectedExecutionException("full");
+        };
+        FluxGateHealthIndicator saturated = new FluxGateHealthIndicator(client, tracker, rejecting, INTERVAL, clock);
+
+        assertThat(saturated.health().getStatus()).isEqualTo(Status.UNKNOWN);
+
+        FluxGateHealthIndicator direct = new FluxGateHealthIndicator(client, tracker, Runnable::run, INTERVAL, clock);
+        when(client.isHealthy()).thenReturn(true);
+        direct.health();
+        assertThat(direct.health().getStatus()).isEqualTo(Status.UP);
+    }
+
+    static final class MutableClock extends Clock {
+
+        private Instant now;
+
+        MutableClock(Instant now) {
+            this.now = now;
+        }
+
+        void advance(Duration duration) {
+            now = now.plus(duration);
+        }
+
+        @Override
+        public ZoneId getZone() {
+            return ZoneOffset.UTC;
+        }
+
+        @Override
+        public Clock withZone(ZoneId zone) {
+            return this;
+        }
+
+        @Override
+        public Instant instant() {
+            return now;
+        }
+    }
+}

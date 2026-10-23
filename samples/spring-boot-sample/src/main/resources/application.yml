@@ -1,0 +1,16 @@
+server:
+  port: ${PORT:8090}
+
+fluxgate:
+  base-url: ${FLUXGATE_BASE_URL:http://localhost:18081}
+  # SDK key of a FluxGate client: <clientId>.<apiKey>. Never commit it.
+  sdk-key: ${FLUXGATE_SDK_KEY:}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,metrics
+  endpoint:
+    health:
+      show-details: always

@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>com.forgeopslabs</groupId>
+        <artifactId>fluxgate-parent</artifactId>
+        <version>1.0.0-SNAPSHOT</version>
+    </parent>
+
+    <artifactId>fluxgate-samples</artifactId>
+    <packaging>pom</packaging>
+
+    <name>FluxGate Samples</name>
+    <description>Sample applications for the FluxGate Java SDK. Built in CI, never published.</description>
+
+    <modules>
+        <module>java-sample</module>
+        <module>spring-boot-sample</module>
+    </modules>
+
+    <properties>
+        <!-- Samples are built and run locally, never released to Maven Central -->
+        <skipPublishing>true</skipPublishing>
+        <maven.deploy.skip>true</maven.deploy.skip>
+        <maven.javadoc.skip>true</maven.javadoc.skip>
+        <maven.source.skip>true</maven.source.skip>
+        <jacoco.skip>true</jacoco.skip>
+    </properties>
+</project>

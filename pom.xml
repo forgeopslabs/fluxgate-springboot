@@ -4,25 +4,25 @@
     xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
     <modelVersion>4.0.0</modelVersion>
 
-    <parent>
-        <groupId>org.springframework.boot</groupId>
-        <artifactId>spring-boot-starter-parent</artifactId>
-        <version>3.5.16</version>
-        <relativePath />
-    </parent>
-
-    <groupId>io.github.keaz</groupId>
-    <artifactId>fluxgate-spring-boot-starter</artifactId>
+    <groupId>com.forgeopslabs</groupId>
+    <artifactId>fluxgate-parent</artifactId>
     <version>1.0.0-SNAPSHOT</version>
-    <packaging>jar</packaging>
+    <packaging>pom</packaging>
 
-    <name>FluxGate Spring Boot Starter</name>
-    <description>Spring Boot starter for FluxGate Feature Toggle Edge Server</description>
+    <name>FluxGate Java SDK Parent</name>
+    <description>Parent POM for the FluxGate Java client and Spring Boot starter</description>
+    <url>https://github.com/forgeopslabs/fluxgate-springboot</url>
+
+    <organization>
+        <name>ForgeOps LABS</name>
+        <url>https://forgeopslabs.com</url>
+    </organization>
 
     <licenses>
         <license>
             <name>Apache License, Version 2.0</name>
-            <url>http://www.apache.org/licenses/LICENSE-2.0</url>
+            <url>https://www.apache.org/licenses/LICENSE-2.0</url>
+            <distribution>repo</distribution>
         </license>
     </licenses>
 
@@ -31,18 +31,33 @@
             <id>keaz</id>
             <name>Kasun</name>
             <email>kasun.ranasinghe@icloud.com</email>
+            <organization>ForgeOps LABS</organization>
+            <organizationUrl>https://forgeopslabs.com</organizationUrl>
         </developer>
     </developers>
 
     <scm>
-        <connection>scm:git:https://github.com/keaz/fluxgate-springboot.git</connection>
-        <developerConnection>scm:git:ssh://github.com:keaz/fluxgate-springboot.git</developerConnection>
-        <url>https://github.com/keaz/fluxgate-springboot</url>
+        <connection>scm:git:https://github.com/forgeopslabs/fluxgate-springboot.git</connection>
+        <developerConnection>scm:git:ssh://git@github.com/forgeopslabs/fluxgate-springboot.git</developerConnection>
+        <url>https://github.com/forgeopslabs/fluxgate-springboot</url>
     </scm>
+
+    <modules>
+        <module>fluxgate-java</module>
+        <module>fluxgate-spring-boot-starter</module>
+        <module>samples</module>
+    </modules>
 
     <properties>
         <java.version>17</java.version>
-        <openfeature-sdk.version>1.23.0</openfeature-sdk.version>
+        <maven.compiler.release>17</maven.compiler.release>
+        <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+        <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
+
+        <!-- Only a version source: imported as a BOM, never inherited as a parent -->
+        <spring-boot.version>3.5.16</spring-boot.version>
+        <openfeature.version>1.23.0</openfeature.version>
+        <wiremock.version>3.13.2</wiremock.version>
 
         <!-- SonarQube and Code Coverage -->
         <sonar.organization>kasun</sonar.organization>
@@ -58,100 +73,74 @@
         <argLine></argLine>
     </properties>
 
-    <dependencies>
-        <!-- Spring Boot Core -->
-        <dependency>
-            <groupId>org.springframework.boot</groupId>
-            <artifactId>spring-boot-autoconfigure</artifactId>
-        </dependency>
-
-        <!-- Configuration Properties Support -->
-        <dependency>
-            <groupId>org.springframework.boot</groupId>
-            <artifactId>spring-boot-configuration-processor</artifactId>
-            <optional>true</optional>
-        </dependency>
-
-        <!-- Logging API (used directly; version managed by Spring Boot) -->
-        <dependency>
-            <groupId>org.slf4j</groupId>
-            <artifactId>slf4j-api</artifactId>
-        </dependency>
-
-        <!-- Spring Web for the RestClient HTTP transport -->
-        <dependency>
-            <groupId>org.springframework</groupId>
-            <artifactId>spring-web</artifactId>
-        </dependency>
-
-        <!-- Jackson for JSON -->
-        <dependency>
-            <groupId>com.fasterxml.jackson.core</groupId>
-            <artifactId>jackson-databind</artifactId>
-        </dependency>
-
-        <!-- java.time support for evaluation context attributes (ISO-8601) -->
-        <dependency>
-            <groupId>com.fasterxml.jackson.datatype</groupId>
-            <artifactId>jackson-datatype-jsr310</artifactId>
-        </dependency>
-
-        <!-- Evaluation cache -->
-        <dependency>
-            <groupId>com.github.ben-manes.caffeine</groupId>
-            <artifactId>caffeine</artifactId>
-        </dependency>
-
-        <!-- Actuator for health indicators (optional) -->
-        <dependency>
-            <groupId>org.springframework.boot</groupId>
-            <artifactId>spring-boot-starter-actuator</artifactId>
-            <optional>true</optional>
-        </dependency>
-
-        <!-- Micrometer metrics (optional) -->
-        <dependency>
-            <groupId>io.micrometer</groupId>
-            <artifactId>micrometer-core</artifactId>
-            <optional>true</optional>
-        </dependency>
-
-        <!-- @FeatureToggle annotation aspect (optional) -->
-        <dependency>
-            <groupId>org.springframework.boot</groupId>
-            <artifactId>spring-boot-starter-aop</artifactId>
-            <optional>true</optional>
-        </dependency>
-
-        <!-- OpenFeature SDK (optional): the provider is configured only when it is on the classpath -->
-        <dependency>
-            <groupId>dev.openfeature</groupId>
-            <artifactId>sdk</artifactId>
-            <version>${openfeature-sdk.version}</version>
-            <optional>true</optional>
-        </dependency>
-
-        <!-- Test Dependencies -->
-        <dependency>
-            <groupId>org.springframework.boot</groupId>
-            <artifactId>spring-boot-starter-test</artifactId>
-            <scope>test</scope>
-        </dependency>
-
-        <dependency>
-            <groupId>org.wiremock</groupId>
-            <artifactId>wiremock-standalone</artifactId>
-            <version>3.13.2</version>
-            <scope>test</scope>
-        </dependency>
-    </dependencies>
+    <dependencyManagement>
+        <dependencies>
+            <dependency>
+                <groupId>com.forgeopslabs</groupId>
+                <artifactId>fluxgate-java</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.forgeopslabs</groupId>
+                <artifactId>fluxgate-spring-boot-starter</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>dev.openfeature</groupId>
+                <artifactId>sdk</artifactId>
+                <version>${openfeature.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.wiremock</groupId>
+                <artifactId>wiremock-standalone</artifactId>
+                <version>${wiremock.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.springframework.boot</groupId>
+                <artifactId>spring-boot-dependencies</artifactId>
+                <version>${spring-boot.version}</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
+        </dependencies>
+    </dependencyManagement>
 
     <build>
+        <pluginManagement>
+            <plugins>
+                <plugin>
+                    <groupId>org.apache.maven.plugins</groupId>
+                    <artifactId>maven-compiler-plugin</artifactId>
+                    <version>3.14.0</version>
+                    <configuration>
+                        <!-- Keep parameter names, as spring-boot-starter-parent does -->
+                        <parameters>true</parameters>
+                    </configuration>
+                </plugin>
+                <plugin>
+                    <groupId>org.apache.maven.plugins</groupId>
+                    <artifactId>maven-surefire-plugin</artifactId>
+                    <version>3.5.4</version>
+                </plugin>
+                <plugin>
+                    <groupId>org.codehaus.mojo</groupId>
+                    <artifactId>versions-maven-plugin</artifactId>
+                    <version>2.19.1</version>
+                </plugin>
+                <plugin>
+                    <groupId>org.sonarsource.scanner.maven</groupId>
+                    <artifactId>sonar-maven-plugin</artifactId>
+                    <version>3.10.0.2594</version>
+                </plugin>
+            </plugins>
+        </pluginManagement>
+
         <plugins>
             <!-- Exposes ${org.mockito:mockito-core:jar} for the Mockito agent below -->
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-dependency-plugin</artifactId>
+                <version>3.8.1</version>
                 <executions>
                     <execution>
                         <goals>
@@ -170,22 +159,14 @@
             </plugin>
 
             <plugin>
-                <groupId>org.springframework.boot</groupId>
-                <artifactId>spring-boot-maven-plugin</artifactId>
-                <configuration>
-                    <skip>true</skip>
-                </configuration>
-            </plugin>
-
-            <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-source-plugin</artifactId>
-                <version>3.3.0</version>
+                <version>3.4.0</version>
                 <executions>
                     <execution>
                         <id>attach-sources</id>
                         <goals>
-                            <goal>jar</goal>
+                            <goal>jar-no-fork</goal>
                         </goals>
                     </execution>
                 </executions>
@@ -194,7 +175,7 @@
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-javadoc-plugin</artifactId>
-                <version>3.6.0</version>
+                <version>3.12.0</version>
                 <executions>
                     <execution>
                         <id>attach-javadocs</id>
@@ -246,29 +227,12 @@
                     </execution>
                 </executions>
             </plugin>
-
-            <!-- SonarQube Maven plugin -->
-            <plugin>
-                <groupId>org.sonarsource.scanner.maven</groupId>
-                <artifactId>sonar-maven-plugin</artifactId>
-                <version>3.10.0.2594</version>
-            </plugin>
-
-            <plugin>
-                <groupId>org.sonatype.central</groupId>
-                <artifactId>central-publishing-maven-plugin</artifactId>
-                <version>0.8.0</version>
-                <extensions>true</extensions>
-                <configuration>
-                    <publishingServerId>ossrh</publishingServerId>
-                    <autoPublish>true</autoPublish>
-                    <waitUntil>published</waitUntil>
-                </configuration>
-            </plugin>
         </plugins>
     </build>
 
     <profiles>
+        <!-- Signs every artifact and publishes the whole reactor to Maven Central
+             through the Central Portal. Used by .github/workflows/release.yml. -->
         <profile>
             <id>release</id>
             <build>
@@ -276,7 +240,7 @@
                     <plugin>
                         <groupId>org.apache.maven.plugins</groupId>
                         <artifactId>maven-gpg-plugin</artifactId>
-                        <version>3.2.2</version>
+                        <version>3.2.8</version>
                         <executions>
                             <execution>
                                 <id>sign-artifacts</id>
@@ -286,6 +250,18 @@
                                 </goals>
                             </execution>
                         </executions>
+                    </plugin>
+
+                    <plugin>
+                        <groupId>org.sonatype.central</groupId>
+                        <artifactId>central-publishing-maven-plugin</artifactId>
+                        <version>0.12.0</version>
+                        <extensions>true</extensions>
+                        <configuration>
+                            <publishingServerId>central</publishingServerId>
+                            <autoPublish>true</autoPublish>
+                            <waitUntil>published</waitUntil>
+                        </configuration>
                     </plugin>
                 </plugins>
             </build>
