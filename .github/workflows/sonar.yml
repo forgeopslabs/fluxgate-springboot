@@ -5,32 +5,45 @@ on:
       - main
   pull_request:
     types: [opened, synchronize, reopened]
+
+permissions:
+  contents: read
+
 jobs:
   build:
     name: Build and analyze
     runs-on: ubuntu-latest
+    env:
+      SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
     steps:
+      # SonarCloud analysis needs the SONAR_TOKEN secret, which forks and new
+      # clones of this repository do not have. Skip instead of failing.
+      - name: Skip without SONAR_TOKEN
+        if: env.SONAR_TOKEN == ''
+        run: echo "::notice::SONAR_TOKEN is not set; skipping SonarCloud analysis."
       - uses: actions/checkout@v4
+        if: env.SONAR_TOKEN != ''
         with:
           fetch-depth: 0  # Shallow clones should be disabled for a better relevancy of analysis
-      - name: Set up JDK 17
+      # The scanner itself needs Java 21+; the code still compiles for Java 17.
+      - name: Set up JDK 21
+        if: env.SONAR_TOKEN != ''
         uses: actions/setup-java@v4
         with:
-          java-version: 17
-          distribution: 'zulu' # Alternative distribution options are available.
+          java-version: 21
+          distribution: 'temurin'
+          cache: maven
       - name: Cache SonarQube packages
+        if: env.SONAR_TOKEN != ''
         uses: actions/cache@v4
         with:
           path: ~/.sonar/cache
           key: ${{ runner.os }}-sonar
           restore-keys: ${{ runner.os }}-sonar
-      - name: Cache Maven packages
-        uses: actions/cache@v4
-        with:
-          path: ~/.m2
-          key: ${{ runner.os }}-m2-${{ hashFiles('**/pom.xml') }}
-          restore-keys: ${{ runner.os }}-m2
       - name: Build and analyze
-        env:
-          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
-        run: mvn -B verify org.sonarsource.scanner.maven:sonar-maven-plugin:sonar -Dsonar.projectKey=keaz_fluxgate-springboot -Djacoco.skip.check=true
+        if: env.SONAR_TOKEN != ''
+        run: >-
+          mvn -B -ntp verify org.sonarsource.scanner.maven:sonar-maven-plugin:sonar
+          -Djacoco.skip.check=true
+          -Dsonar.organization=${{ vars.SONAR_ORGANIZATION || 'forgeopslabs' }}
+          -Dsonar.projectKey=${{ vars.SONAR_PROJECT_KEY || 'forgeopslabs_fluxgate-springboot' }}
